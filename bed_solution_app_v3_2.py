@@ -219,8 +219,23 @@ def get_google_creds():
     except Exception:
         return service_account.Credentials.from_service_account_file('key.json', scopes=scope)
 
+def _safe_secret(key, default=None):
+    try:
+        return st.secrets.get(key, default)
+    except Exception:
+        return default
+
+def _safe_users_secret():
+    try:
+        if "users" in st.secrets:
+            return dict(st.secrets["users"])
+    except Exception:
+        pass
+    return None
+
 def get_sheet_url():
-    return st.secrets.get("bed_solution_url", st.secrets.get("liq_url", ""))
+    val = _safe_secret("bed_solution_url", None)
+    return val if val else _safe_secret("liq_url", "")
 
 # =====================================================================
 # PROFESSIONAL PDF REPORT ENGINE (BED SOLUTION BRANDING)
@@ -453,17 +468,12 @@ def authenticate():
         return True
 
     st.markdown("## 🔒 Bed Solution — Sign In")
-    users_secrets = None
-    try:
-        if "users" in st.secrets:
-            users_secrets = st.secrets["users"]
-    except Exception:
-        users_secrets = None
+    users_secrets = _safe_users_secret()
 
     if not users_secrets:
         pwd = st.text_input("Password", type="password", key="legacy_pwd")
         if st.button("Login", type="primary"):
-            if pwd == st.secrets.get("app_password", "BED2026"):
+            if pwd == _safe_secret("app_password", "BED2026"):
                 st.session_state.user = {"username": "manager", "name": "Manager", "role": "manager"}
                 st.rerun()
             else:
