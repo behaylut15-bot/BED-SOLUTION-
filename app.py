@@ -12,7 +12,7 @@ from kenat import Kenat
 import os
 import urllib.request
 
-st.set_page_config(page_title="BED SOLUTION Dashboard", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Bed Solution Dashboard", layout="wide", initial_sidebar_state="expanded")
 
 # --- CONSTANTS & HEADERS ---
 _REQ_HDRS = [
@@ -34,7 +34,7 @@ except Exception:
 st.markdown("""
     <style>
     .golden-title {
-        font-family: 'Arial', sans-serif; font-size: clamp(42px, 8vw, 96px) !important;
+        font-family: 'Arial', sans-serif; font-size: clamp(50px, 10vw, 120px) !important;
         font-weight: 900 !important; color: #D4AF37 !important; text-shadow: 3px 3px 8px rgba(0,0,0,0.8);
         text-align: center; margin-top: 0px; margin-bottom: 0px; padding-bottom: 0px; line-height: 1.1;
     }
@@ -78,12 +78,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- HELPERS ---
-def get_sheet_url():
-    url = str(st.secrets.get("bed_solution_url", "")).strip()
-    if not url:
-        url = str(st.secrets.get("sofabet_url", "")).strip()
-    return url
-
 def to_ethiopian(date_val):
     if pd.isna(date_val):
         return ""
@@ -157,7 +151,8 @@ def get_google_creds():
 
 def _get_sheets_global():
     creds = get_google_creds()
-    return gspread.authorize(creds).open_by_url(get_sheet_url())
+    url = str(st.secrets.get("bed_solution_url", st.secrets.get("sofabet_url", ""))).strip()
+    return gspread.authorize(creds).open_by_url(url)
 
 def _ensure_sheet(ws_name, headers):
     sh = _get_sheets_global()
@@ -260,13 +255,13 @@ def _draw_report_header(pdf, f_name, title, subtitle):
         except Exception:
             text_x = 10
 
-    brand_name = "BED SOLUTION"
+    brand_name = "ቤድ ሶሉሽን BED SOLUTION" if f_name == "DejaVu" else "BED SOLUTION"
 
     pdf.set_xy(text_x, 5); pdf.set_font(f_name, "B", 16); pdf.set_text_color(*GOLD)
     pdf.cell(0, 8, brand_name, ln=True, align="L")
 
     pdf.set_xy(text_x, 13); pdf.set_font(f_name, "", 8); pdf.set_text_color(230, 230, 230)
-    pdf.cell(0, 4, "Quality Bed Manufacturing & Solutions", align="L")
+    pdf.cell(0, 4, "Quality Bed Manufacturing", align="L")
 
     pdf.set_y(7); pdf.set_x(10); pdf.set_font(f_name, "B", 9); pdf.set_text_color(*GOLD)
     pdf.cell(0, 8, "OFFICIAL AUDIT REPORT", align="R")
@@ -704,7 +699,7 @@ def authenticate():
     if not users_secrets:
         pwd = st.text_input("Master Password", type="password", key="legacy_pwd")
         if st.button("Login", type="primary"):
-            if pwd == st.secrets.get("app_password", "BEDS2026"):
+            if pwd == st.secrets.get("app_password", "BED2026"):
                 st.session_state.user = {"username": "manager", "name": "Manager", "role": "manager"}
                 st.rerun()
             else:
@@ -764,7 +759,7 @@ if authenticate():
             st.cache_data.clear()
             st.rerun()
 
-    st.markdown('<p class="golden-title">BED SOLUTION</p>', unsafe_allow_html=True)
+    st.markdown('<p class="golden-title">ቤድ ሶሉሽን</p>', unsafe_allow_html=True)
     st.markdown('<p class="sub-title">EXECUTIVE DASHBOARD</p>', unsafe_allow_html=True)
 
     # --- ETHIOPIAN DATE FILTERS ---
@@ -828,9 +823,9 @@ if authenticate():
 
     @st.cache_data(ttl=300, show_spinner="Loading Bed Solution data...")
     def load_data():
-        url = get_sheet_url()
+        url = str(st.secrets.get("bed_solution_url", st.secrets.get("sofabet_url", ""))).strip()
         if not url:
-            st.error("❌ Missing 'bed_solution_url' (or 'sofabet_url') in Streamlit Secrets.")
+            st.error("❌ Missing 'bed_solution_url' or 'sofabet_url' in Streamlit Secrets.")
             st.stop()
 
         tabs = [
@@ -844,25 +839,18 @@ if authenticate():
             client = gspread.authorize(creds)
             sheet = client.open_by_url(url)
 
-            # Fallback to Sofa_Models if Bed_Models tab doesn't exist yet
-            existing_titles = {ws.title for ws in sheet.worksheets()}
-            effective_tabs = [
-                ("Sofa_Models" if (t == "Bed_Models" and "Bed_Models" not in existing_titles and "Sofa_Models" in existing_titles) else t)
-                for t in tabs
-            ]
-
-            ranges = [f"'{tab}'!A:Z" for tab in effective_tabs]
+            ranges = [f"'{tab}'!A:Z" for tab in tabs]
             batch_res = sheet.values_batch_get(ranges)
             value_ranges = batch_res.get("valueRanges", [])
 
             result = {}
-            for orig_tab, vr in zip(tabs, value_ranges):
+            for tab, vr in zip(tabs, value_ranges):
                 raw = vr.get("values", [])
                 if len(raw) > 1:
                     raw_headers = [str(h).strip() for h in raw[0]]
                     valid_cols = [(idx, h) for idx, h in enumerate(raw_headers) if h != ""]
                     if not valid_cols:
-                        result[orig_tab] = pd.DataFrame()
+                        result[tab] = pd.DataFrame()
                         continue
 
                     headers = [h for _, h in valid_cols]
@@ -880,11 +868,11 @@ if authenticate():
 
                     if normalized_rows:
                         df = pd.DataFrame(normalized_rows, columns=headers).replace("", pd.NA).dropna(how="all")
-                        result[orig_tab] = df
+                        result[tab] = df
                     else:
-                        result[orig_tab] = pd.DataFrame()
+                        result[tab] = pd.DataFrame()
                 else:
-                    result[orig_tab] = pd.DataFrame()
+                    result[tab] = pd.DataFrame()
             return result
 
         except gspread.exceptions.APIError as e:
@@ -1254,7 +1242,7 @@ if authenticate():
             st.divider()
             c_left, c_right = st.columns(2)
             with c_left:
-                st.subheader("Top Selling Models")
+                st.subheader("Top Selling Bed Models")
                 if not df_sales_filt.empty and "Model_Name" in df_sales_filt.columns:
                     top_models = df_sales_filt.groupby("Model_Name")["Qty_Sold"].sum().reset_index().sort_values(by="Qty_Sold", ascending=False).head(5)
                     fig = px.bar(top_models, x="Model_Name", y="Qty_Sold", color="Qty_Sold", color_continuous_scale="Teal")
@@ -1339,7 +1327,7 @@ if authenticate():
                             st.download_button(
                                 f"📥 Download PDF for Batch {selected_batch}",
                                 data=batch_pdf_bytes,
-                                file_name=f"BedSolution_Batch_{selected_batch}.pdf",
+                                file_name=f"Bed_Solution_Batch_{selected_batch}.pdf",
                                 mime="application/pdf",
                                 type="primary"
                             )
@@ -1390,15 +1378,15 @@ if authenticate():
                         if not this_month_oh.empty:
                             month_consumable = float(this_month_oh["Monthly_Consumable_Cost"].values[0])
                             month_produced = float(this_month_oh["Monthly_Qty_Produced"].values[0])
-                            month_oh_per_bed = float(this_month_oh["Overhead_Per_Unit"].values[0])
+                            month_oh_per_sofa = float(this_month_oh["Overhead_Per_Unit"].values[0])
                         else:
-                            month_consumable, month_produced, month_oh_per_bed = 0.0, 0.0, 0.0
+                            month_consumable, month_produced, month_oh_per_sofa = 0.0, 0.0, 0.0
 
                         st.markdown(f"""
                         <div class="info-box">
                         <b>How Workshop Overhead was calculated for this month:</b><br>
                         Total Month Workshop Consumables ÷ Total Month Production = Overhead per Bed<br>
-                        <b>ETB {month_consumable:,.2f}</b> ÷ <b>{month_produced:,.0f} beds</b> = <b>ETB {month_oh_per_bed:,.2f} per bed</b>
+                        <b>ETB {month_consumable:,.2f}</b> ÷ <b>{month_produced:,.0f} beds</b> = <b>ETB {month_oh_per_sofa:,.2f} per bed</b>
                         </div>
                         """, unsafe_allow_html=True)
 
@@ -1481,7 +1469,7 @@ if authenticate():
                         st.download_button(
                             "📥 Download Income Statement PDF",
                             data=income_pdf_bytes,
-                            file_name=f"BedSolution_Income_Statement_{m_name}_{int(row['Eth_Year'])}.pdf",
+                            file_name=f"Income_Statement_{m_name}_{int(row['Eth_Year'])}.pdf",
                             mime="application/pdf",
                             type="primary",
                             key=f"dl_income_{m_name}_{int(row['Eth_Year'])}"
@@ -1652,7 +1640,7 @@ if authenticate():
                     st.download_button(
                         "📥 Download Detailed Stock Audit (PDF)",
                         data=pdf_bytes,
-                        file_name=f"BedSolution_Stock_Audit_{sel_label.replace(' ', '_')}.pdf",
+                        file_name=f"Bed_Solution_Stock_Audit_{sel_label.replace(' ', '_')}.pdf",
                         mime="application/pdf",
                         type="primary"
                     )
@@ -1765,7 +1753,7 @@ if authenticate():
                 st.download_button(
                     "📥 Download Detailed Supplier Audit (PDF)",
                     data=pdf_bytes_sup,
-                    file_name=f"BedSolution_Supplier_Audit_{sel_label_s.replace(' ', '_')}.pdf",
+                    file_name=f"Bed_Solution_Supplier_Audit_{sel_label_s.replace(' ', '_')}.pdf",
                     mime="application/pdf",
                     type="primary"
                 )
@@ -1914,7 +1902,7 @@ if authenticate():
                     st.download_button(
                         "📥 Download Purchase Request PDF",
                         data=st.session_state["pr_pdf"],
-                        file_name="BedSolution_Request.pdf",
+                        file_name="Bed_Solution_Request.pdf",
                         mime="application/pdf"
                     )
 
@@ -2147,7 +2135,7 @@ if authenticate():
                         st.download_button(
                             "📥 Download PDF Report",
                             data=rep_pdf_bytes,
-                            file_name=f"BedSolution_Purchase_Report_{sel_rep_id}.pdf",
+                            file_name=f"Bed_Solution_Purchase_Report_{sel_rep_id}.pdf",
                             mime="application/pdf",
                             type="primary",
                             use_container_width=True
@@ -2249,6 +2237,7 @@ if authenticate():
                 "🧊 Tied-Up Capital"
             ])
 
+            # TAB 1: MODEL ECONOMICS
             with an_tab1:
                 st.markdown("### 🛏️ Bed Model Profitability & Unit Economics")
                 if not df_sales_filt.empty and "Model_Name" in df_sales_filt.columns:
@@ -2298,6 +2287,7 @@ if authenticate():
                 else:
                     st.info("No sales data in the selected range to compute model unit economics.")
 
+            # TAB 2: STOCK RUNWAY
             with an_tab2:
                 st.markdown("### ⏳ Stock Runway & Reorder Urgency")
                 st.caption("Estimates how many days current stock will last based on recorded issue pace.")
@@ -2348,139 +2338,118 @@ if authenticate():
 
                     df_runway_sorted = df_runway.sort_values(by=["Est_Days_Left", "On_Hand_Qty"], ascending=[True, True])
                     chart_runway = df_runway_sorted[df_runway_sorted["Est_Days_Left"] < 999.0].head(15)
+                    
                     if not chart_runway.empty:
                         fig_run = px.bar(
                             chart_runway, x="Est_Days_Left", y="Material_Name", orientation="h",
                             color="Est_Days_Left", color_continuous_scale="RdYlGn",
-                            title="Estimated Days of Stock Remaining (Lower = More Urgent)"
+                            title="Estimated Days of Stock Remaining (Top Urgent)"
                         )
-                        fig_run.update_layout(yaxis={"categoryorder": "total ascending"})
+                        fig_run.update_layout(yaxis={'categoryorder':'total ascending'})
                         st.plotly_chart(fig_run, use_container_width=True)
-
-                    st.dataframe(
-                        df_runway_sorted.style.format({
-                            "On_Hand_Qty": "{:,.0f}", "Reorder_Level": "{:,.0f}",
-                            "Daily_Usage": "{:,.2f}/day",
-                            "Est_Days_Left": lambda v: "N/A" if v >= 999.0 else f"{v:,.1f} days"
-                        }).map(color_negative_red, subset=["On_Hand_Qty"]),
-                        use_container_width=True,
-                        hide_index=True
-                    )
+                    
+                    st.dataframe(df_runway_sorted, use_container_width=True, hide_index=True)
                 else:
-                    st.info("No material stock data available.")
+                    st.info("No stock data available to compute runway.")
 
+            # TAB 3: SUPPLIER & PRICE INTEL
             with an_tab3:
-                st.markdown("### 🧾 Weighted Cost Drift & Supplier Spend")
-                if not df_pur.empty:
-                    pur_calc = df_pur.copy()
-                    pur_calc["Line_Total"] = pur_calc["Qty"] * pur_calc["Unit_Cost"]
-                    pur_calc = pur_calc.sort_values(by="Date")
-
-                    mat_lookup = dict(zip(df_mat["Material_ID"], df_mat["Material_Name"])) if not df_mat.empty else {}
-                    mat_price_rows = []
-                    for m_id, grp in pur_calc.groupby("Material_ID"):
-                        m_name = mat_lookup.get(m_id, m_id)
-                        tot_qty = float(grp["Qty"].sum())
-                        tot_spend = float(grp["Line_Total"].sum())
-                        w_avg = safe_div(tot_spend, tot_qty, 0.0)
-                        latest_cost = float(grp.iloc[-1]["Unit_Cost"])
-                        drift_pct = safe_div((latest_cost - w_avg) * 100.0, w_avg, 0.0)
-                        mat_price_rows.append({
-                            "Material_Name": m_name, "Weighted_Avg_Cost": w_avg,
-                            "Latest_Unit_Cost": latest_cost, "Latest_vs_Avg_%": drift_pct,
-                            "Total_Purchased_ETB": tot_spend
-                        })
-
-                    df_mprice = pd.DataFrame(mat_price_rows).sort_values(by="Latest_vs_Avg_%", ascending=False)
-                    st.markdown("#### Latest Cost vs. Weighted Average Cost")
-                    st.dataframe(
-                        df_mprice.head(20).style.format({
-                            "Weighted_Avg_Cost": "ETB {:,.2f}", "Latest_Unit_Cost": "ETB {:,.2f}",
-                            "Latest_vs_Avg_%": "{:+.1f}%", "Total_Purchased_ETB": "ETB {:,.2f}"
-                        }),
-                        use_container_width=True,
-                        hide_index=True
-                    )
-
-                    st.divider()
-                    st.markdown("#### Supplier Spend & Open Credit Exposure")
-                    sup_name_map = dict(zip(df_sup["Supplier_ID"], df_sup["Supplier_Name"])) if not df_sup.empty else {}
-                    sup_spend = (
-                        pur_calc.groupby("Supplier_ID")
-                        .agg(Total_Purchases_ETB=("Line_Total", "sum"), Credit_Purchases_ETB=("Credit_Value", "sum"), Orders_Count=("Qty", "count"))
-                        .reset_index()
-                    )
-                    sup_spend["Supplier_Name"] = sup_spend["Supplier_ID"].apply(lambda s: sup_name_map.get(s, s))
-                    sup_spend["Open_Balance_ETB"] = sup_spend["Supplier_ID"].apply(lambda s: float(supplier_balances.get(s, 0.0)))
-                    sup_spend = sup_spend.sort_values(by="Total_Purchases_ETB", ascending=False)
-
-                    fig_sup = px.bar(
-                        sup_spend.head(12), x="Supplier_Name",
-                        y=["Total_Purchases_ETB", "Open_Balance_ETB"],
-                        barmode="group",
-                        title="Top Suppliers: Total Purchases vs. Open Credit Balance (ETB)"
-                    )
-                    st.plotly_chart(fig_sup, use_container_width=True)
-
-                    st.dataframe(
-                        sup_spend[["Supplier_Name", "Orders_Count", "Total_Purchases_ETB", "Credit_Purchases_ETB", "Open_Balance_ETB"]].style.format({
-                            "Orders_Count": "{:,.0f}", "Total_Purchases_ETB": "ETB {:,.2f}",
-                            "Credit_Purchases_ETB": "ETB {:,.2f}", "Open_Balance_ETB": "ETB {:,.2f}"
-                        }),
-                        use_container_width=True,
-                        hide_index=True
-                    )
-                else:
-                    st.info("No purchase records available for supplier and price analysis.")
-
-            with an_tab4:
-                st.markdown("### 🧊 Cash Tied Up in Inventory (FIFO)")
-                st.caption("Highlights where your working capital is sitting and how long since each material was last issued.")
-
-                if not df_layers.empty:
-                    active = df_layers[df_layers["Qty"] > 0].copy()
-                    if not active.empty:
-                        active["Layer_Value"] = active["Qty"] * active["Unit_Cost"]
-                        df_iss_last = pd.DataFrame(all_issues) if all_issues else pd.DataFrame(columns=["Date", "Material_ID", "Qty", "Cost"])
-                        last_issue_map = {}
-                        if not df_iss_last.empty:
-                            df_iss_last["Date"] = pd.to_datetime(df_iss_last["Date"], errors="coerce")
-                            last_issue_map = df_iss_last.groupby("Material_ID")["Date"].max().to_dict()
-
-                        mat_lookup = dict(zip(df_mat["Material_ID"], df_mat["Material_Name"])) if not df_mat.empty else {}
-                        now_ts = pd.Timestamp.now()
-                        cap_rows = []
-                        for m_id, grp in active.groupby("Material_ID"):
-                            m_name = mat_lookup.get(m_id, m_id)
-                            qty_val = float(grp["Qty"].sum())
-                            fifo_val = float(grp["Layer_Value"].sum())
-                            last_used = last_issue_map.get(m_id, pd.NaT)
-                            days_idle = int((now_ts - last_used).days) if pd.notna(last_used) else 999
-                            cap_rows.append({
-                                "Material_Name": m_name, "Qty_On_Hand": qty_val,
-                                "FIFO_Value_ETB": fifo_val, "Days_Since_Last_Issue": days_idle
-                            })
-
-                        df_cap = pd.DataFrame(cap_rows).sort_values(by="FIFO_Value_ETB", ascending=False)
-                        st.metric("Total Active FIFO Stock Value", f"ETB {df_cap['FIFO_Value_ETB'].sum():,.2f}")
-
-                        fig_cap = px.bar(
-                            df_cap.head(15), x="FIFO_Value_ETB", y="Material_Name", orientation="h",
-                            color="Days_Since_Last_Issue", color_continuous_scale="OrRd",
-                            title="Top 15 Materials by Capital Tied Up (Color = Days Since Last Issue)"
-                        )
-                        fig_cap.update_layout(yaxis={"categoryorder": "total ascending"})
-                        st.plotly_chart(fig_cap, use_container_width=True)
-
+                st.markdown("### 🧾 Supplier & Price Intelligence")
+                st.caption("Compare pricing across suppliers and monitor price inflation over time.")
+                
+                price_subtab1, price_subtab2 = st.tabs(["Cheapest Suppliers", "Material Price Inflation"])
+                
+                with price_subtab1:
+                    if not df_pur.empty and not df_sup.empty:
+                        df_price = df_pur.copy()
+                        df_price["Unit_Cost"] = clean_numeric_col(df_price["Unit_Cost"], 0.0)
+                        df_price = df_price.merge(df_sup[["Supplier_ID", "Supplier_Name"]], on="Supplier_ID", how="left")
+                        df_price = df_price.merge(df_mat[["Material_ID", "Material_Name"]], on="Material_ID", how="left")
+                        
+                        # Average price per supplier per material
+                        sup_prices = df_price.groupby(["Material_ID", "Material_Name", "Supplier_Name"])["Unit_Cost"].mean().reset_index()
+                        
+                        # Find the cheapest supplier for each material
+                        idx_min = sup_prices.groupby("Material_ID")["Unit_Cost"].idxmin()
+                        cheapest_sups = sup_prices.loc[idx_min].sort_values(by="Unit_Cost", ascending=False)
+                        
+                        st.write("**Cheapest Supplier Per Material:**")
                         st.dataframe(
-                            df_cap.style.format({
-                                "Qty_On_Hand": "{:,.0f}", "FIFO_Value_ETB": "ETB {:,.2f}",
-                                "Days_Since_Last_Issue": lambda d: "Never Issued" if d >= 999 else f"{d} days"
-                            }),
-                            use_container_width=True,
-                            hide_index=True
+                            cheapest_sups[["Material_Name", "Supplier_Name", "Unit_Cost"]].style.format({"Unit_Cost": "ETB {:,.2f}"}),
+                            use_container_width=True, hide_index=True
                         )
                     else:
-                        st.success("No positive stock layers on hand.")
+                        st.info("No purchase or supplier data available.")
+                
+                with price_subtab2:
+                    if not df_pur.empty:
+                        df_hist_price = df_pur.sort_values("Date").copy()
+                        df_hist_price["Unit_Cost"] = clean_numeric_col(df_hist_price["Unit_Cost"], 0.0)
+                        df_hist_price = df_hist_price.merge(df_mat[["Material_ID", "Material_Name"]], on="Material_ID", how="left")
+                        
+                        # Price variance (First vs Last)
+                        price_var = df_hist_price.groupby(["Material_ID", "Material_Name"]).agg(
+                            First_Price=("Unit_Cost", "first"),
+                            Last_Price=("Unit_Cost", "last"),
+                            Purchases=("Unit_Cost", "count")
+                        ).reset_index()
+                        
+                        price_var["Change_ETB"] = price_var["Last_Price"] - price_var["First_Price"]
+                        price_var["Change_%"] = price_var.apply(lambda r: safe_div(r["Change_ETB"] * 100, r["First_Price"], 0.0), axis=1)
+                        
+                        inflating = price_var[price_var["Change_ETB"] > 0].sort_values(by="Change_%", ascending=False)
+                        
+                        if not inflating.empty:
+                            st.write("**Top Materials with Inflation (First vs Latest Price):**")
+                            fig_infl = px.bar(inflating.head(10), x="Material_Name", y="Change_%", color="Change_%", color_continuous_scale="Reds")
+                            st.plotly_chart(fig_infl, use_container_width=True)
+                            
+                            st.dataframe(
+                                inflating[["Material_Name", "First_Price", "Last_Price", "Change_ETB", "Change_%", "Purchases"]].style.format({
+                                    "First_Price": "ETB {:,.2f}", "Last_Price": "ETB {:,.2f}",
+                                    "Change_ETB": "ETB {:,.2f}", "Change_%": "{:.1f}%"
+                                }),
+                                use_container_width=True, hide_index=True
+                            )
+                        else:
+                            st.success("No material price inflation detected yet.")
+                    else:
+                        st.info("No purchase data available.")
+
+            # TAB 4: TIED-UP CAPITAL
+            with an_tab4:
+                st.markdown("### 🧊 Tied-Up Capital")
+                st.caption("Where is your money sitting right now? (Current Stock Qty × FIFO Unit Cost)")
+                
+                if not df_layers.empty and not df_mat.empty:
+                    df_cap = df_layers[df_layers["Qty"] > 0].copy()
+                    if not df_cap.empty:
+                        df_cap["Total_Value"] = df_cap["Qty"] * df_cap["Unit_Cost"]
+                        df_cap = df_cap.merge(df_mat[["Material_ID", "Material_Name"]], on="Material_ID", how="left")
+                        df_cap["Material_Name"] = df_cap["Material_Name"].fillna(df_cap["Material_ID"])
+                        
+                        # Summarize tied-up capital by material
+                        cap_summary = df_cap.groupby(["Material_ID", "Material_Name"]).agg(
+                            Qty_On_Hand=("Qty", "sum"),
+                            Total_Value=("Total_Value", "sum")
+                        ).reset_index().sort_values(by="Total_Value", ascending=False)
+                        
+                        total_tied = cap_summary["Total_Value"].sum()
+                        st.metric("Total Capital Tied Up in Inventory", f"ETB {total_tied:,.2f}")
+                        
+                        c_left, c_right = st.columns([1, 2])
+                        with c_left:
+                            top_pie = cap_summary.head(10)
+                            fig_pie = px.pie(top_pie, values="Total_Value", names="Material_Name", hole=0.4, title="Top 10 Materials by Value")
+                            st.plotly_chart(fig_pie, use_container_width=True)
+                            
+                        with c_right:
+                            st.write("**Detailed Capital Breakdown:**")
+                            st.dataframe(
+                                cap_summary.style.format({"Qty_On_Hand": "{:,.0f}", "Total_Value": "ETB {:,.2f}"}),
+                                use_container_width=True, hide_index=True
+                            )
+                    else:
+                        st.info("No active stock layers with value found.")
                 else:
-                    st.info("No inventory layer data available.")
+                    st.info("No inventory layers or material data available.")
