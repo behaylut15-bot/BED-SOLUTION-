@@ -10,8 +10,6 @@ from google.oauth2 import service_account
 import gspread
 from kenat import Kenat
 import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
 import streamlit as st
 
 # =====================================================================
@@ -438,7 +436,9 @@ def _draw_table(pdf, f_name, headers, rows, font_size=7):
     pdf.set_text_color(*DARK)
 
     def _fit(text):
-        s = str(text).strip().replace("\n", " ").replace("\r", "")
+        s = str(text).strip().replace("
+", " ").replace("
+", "")
         if not s or s.lower() in ("nan", "none"):
             return ""
         while pdf.get_string_width(s) > (col_w - 1.5) and len(s) > 1:
@@ -482,6 +482,29 @@ def _draw_total_box(pdf, f_name, label, amount):
     pdf.set_font(f_name, "B", 13)
     pdf.set_text_color(*WHITE)
     pdf.cell(box_w - 11, 6, f"ETB {amount:,.2f}", ln=True, align="R")
+
+
+def _draw_signature_block(pdf, f_name, left_title, left_name, right_title, right_name):
+    pdf.ln(15)
+    pdf.set_font(f_name, "", 9)
+    sig_y = pdf.get_y()
+    if sig_y > pdf.h - 40:
+        pdf.add_page()
+        sig_y = pdf.get_y() + 10
+
+    pdf.set_xy(15, sig_y)
+    pdf.cell(70, 5, left_title, align="L")
+    pdf.set_xy(15, sig_y + 10)
+    pdf.cell(70, 5, f"Name: {left_name}", align="L")
+    pdf.set_xy(15, sig_y + 15)
+    pdf.cell(70, 5, "Signature: _______________________", align="L")
+
+    pdf.set_xy(115, sig_y)
+    pdf.cell(70, 5, right_title, align="L")
+    pdf.set_xy(115, sig_y + 10)
+    pdf.cell(70, 5, f"Name: {right_name}", align="L")
+    pdf.set_xy(115, sig_y + 15)
+    pdf.cell(70, 5, "Signature: _______________________", align="L")
 
 
 def generate_batch_pdf(
@@ -635,27 +658,14 @@ def generate_stock_audit_pdf(
                 ]
             )
     _draw_table(pdf, f_name, headers, rows, font_size=6.5)
-
-    pdf.ln(15)
-    pdf.set_font(f_name, "", 9)
-    sig_y = pdf.get_y()
-    if sig_y > pdf.h - 40:
-        pdf.add_page()
-        sig_y = pdf.get_y() + 10
-
-    pdf.set_xy(15, sig_y)
-    pdf.cell(70, 5, "Prepared By (Store Keeper):", align="L")
-    pdf.set_xy(15, sig_y + 10)
-    pdf.cell(70, 5, f"Name: {sig_sk}", align="L")
-    pdf.set_xy(15, sig_y + 15)
-    pdf.cell(70, 5, "Signature: _______________________", align="L")
-
-    pdf.set_xy(115, sig_y)
-    pdf.cell(70, 5, "Audited By (Production Manager):", align="L")
-    pdf.set_xy(115, sig_y + 10)
-    pdf.cell(70, 5, f"Name: {sig_mgr}", align="L")
-    pdf.set_xy(115, sig_y + 15)
-    pdf.cell(70, 5, "Signature: _______________________", align="L")
+    _draw_signature_block(
+        pdf,
+        f_name,
+        "Prepared By (Store Keeper):",
+        sig_sk,
+        "Audited By (Production Manager):",
+        sig_mgr,
+    )
     return bytes(pdf.output())
 
 
@@ -704,27 +714,122 @@ def generate_purchase_request_pdf(req_rows_df, sig_req, sig_app):
                 ]
             )
     _draw_table(pdf, f_name, headers, rows, font_size=6.5)
+    _draw_signature_block(
+        pdf,
+        f_name,
+        "Requested By (Maker):",
+        sig_req,
+        "Approved By (Approver / Manager):",
+        sig_app,
+    )
+    return bytes(pdf.output())
 
-    pdf.ln(15)
-    pdf.set_font(f_name, "", 9)
-    sig_y = pdf.get_y()
-    if sig_y > pdf.h - 40:
-        pdf.add_page()
-        sig_y = pdf.get_y() + 10
 
-    pdf.set_xy(15, sig_y)
-    pdf.cell(70, 5, "Requested By (Maker):", align="L")
-    pdf.set_xy(15, sig_y + 10)
-    pdf.cell(70, 5, f"Name: {sig_req}", align="L")
-    pdf.set_xy(15, sig_y + 15)
-    pdf.cell(70, 5, "Signature: _______________________", align="L")
+def generate_purchase_approval_pdf(approved_df, sig_app, sig_pur):
+    pdf = _init_pdf(font_ready)
+    f_name = pdf.font_name
+    pdf.add_page()
+    _draw_report_header(
+        pdf,
+        f_name,
+        "Purchase Request Approval & Authorization Sheet",
+        "Approved Raw Material Requisitions Ready for Procurement",
+    )
 
-    pdf.set_xy(115, sig_y)
-    pdf.cell(70, 5, "Approved By (Approver / Manager):", align="L")
-    pdf.set_xy(115, sig_y + 10)
-    pdf.cell(70, 5, f"Name: {sig_app}", align="L")
-    pdf.set_xy(115, sig_y + 15)
-    pdf.cell(70, 5, "Signature: _______________________", align="L")
+    total_app = (
+        approved_df["Est_Total"].sum()
+        if (not approved_df.empty and "Est_Total" in approved_df.columns)
+        else 0.0
+    )
+    _draw_total_box(pdf, f_name, "Total Approved Requisition Value", total_app)
+    pdf.ln(8)
+
+    headers = [
+        "Req ID",
+        "Batch / Purpose",
+        "Material",
+        "Req Qty",
+        "Est. Total",
+        "Approved By",
+        "Status",
+    ]
+    rows = []
+    if not approved_df.empty:
+        for _, r in approved_df.iterrows():
+            rows.append(
+                [
+                    str(r.get("Request_ID", ""))[:14],
+                    str(r.get("Batch_No", "General"))[:14],
+                    str(r.get("Material_Name", r.get("Material_ID", "")))[:22],
+                    fmt_qty(r.get("Requested_Qty", 0)),
+                    f"{float(r.get('Est_Total', 0)):,.2f}",
+                    str(r.get("Approved_By", ""))[:16],
+                    str(r.get("Status", "Approved"))[:12],
+                ]
+            )
+    _draw_table(pdf, f_name, headers, rows, font_size=6.5)
+    _draw_signature_block(
+        pdf,
+        f_name,
+        "Authorized By (Approver / Manager):",
+        sig_app,
+        "Received By (Procurement Purchaser):",
+        sig_pur,
+    )
+    return bytes(pdf.output())
+
+
+def generate_supplier_credit_pdf(credit_df, sig_fin, sig_mgr):
+    pdf = _init_pdf(font_ready)
+    f_name = pdf.font_name
+    pdf.add_page()
+    _draw_report_header(
+        pdf,
+        f_name,
+        "Supplier Credit & Payables Audit Report",
+        "Opening Payables + Credit Purchases - Payments Settled",
+    )
+
+    total_owed = (
+        credit_df["Net Balance Owed (ETB)"].sum()
+        if (not credit_df.empty and "Net Balance Owed (ETB)" in credit_df.columns)
+        else 0.0
+    )
+    _draw_total_box(pdf, f_name, "Total Net Supplier Credit Owed", total_owed)
+    pdf.ln(8)
+
+    headers = [
+        "Supplier ID",
+        "Supplier Name",
+        "Phone",
+        "Opening Owed",
+        "Credit Bought",
+        "Paid (-)",
+        "Net Balance",
+    ]
+    rows = []
+    if not credit_df.empty:
+        for _, r in credit_df.iterrows():
+            rows.append(
+                [
+                    str(r.get("Supplier ID", ""))[:12],
+                    str(r.get("Supplier Name", ""))[:22],
+                    str(r.get("Phone", ""))[:14],
+                    f"{float(r.get('Opening Owed (ETB)', 0)):,.2f}",
+                    f"{float(r.get('Credit Purchases (ETB)', 0)):,.2f}",
+                    f"{float(r.get('Payments Settled (ETB)', 0)):,.2f}",
+                    f"{float(r.get('Net Balance Owed (ETB)', 0)):,.2f}",
+                ]
+            )
+    _draw_table(pdf, f_name, headers, rows, font_size=6.5)
+    _draw_signature_block(
+        pdf,
+        f_name,
+        "Prepared By (Finance / Purchaser):",
+        sig_fin,
+        "Reviewed By (Production Manager):",
+        sig_mgr,
+    )
     return bytes(pdf.output())
 
 
@@ -1358,29 +1463,66 @@ if _run_app:
                 )
                 batch_usage_filt.append(item)
 
-        supplier_balances = {}
+        # Detailed Supplier Credit Breakdown
+        op_pay_map = defaultdict(float)
+        credit_pur_map = defaultdict(float)
+        paid_map = defaultdict(float)
+
         if not df_op_pay.empty:
             for _, r in df_op_pay.iterrows():
                 sid = str(r.get("Supplier_ID", "")).strip()
                 if sid:
-                    supplier_balances[sid] = supplier_balances.get(sid, 0.0) + float(
-                        r["Amount_Owed"]
-                    )
+                    op_pay_map[sid] += float(r["Amount_Owed"])
         if not df_pur.empty:
             for _, r in df_pur.iterrows():
                 if str(r.get("Payment_Type", "")).strip().lower() == "credit":
                     sid = str(r.get("Supplier_ID", "")).strip()
                     if sid:
-                        supplier_balances[sid] = supplier_balances.get(sid, 0.0) + (
-                            float(r["Qty"]) * float(r["Unit_Cost"])
-                        )
+                        credit_pur_map[sid] += float(r["Qty"]) * float(r["Unit_Cost"])
         if not df_pay.empty:
             for _, r in df_pay.iterrows():
                 sid = str(r.get("Supplier_ID", "")).strip()
                 if sid:
-                    supplier_balances[sid] = supplier_balances.get(sid, 0.0) - float(
-                        r["Amount"]
+                    paid_map[sid] += float(r["Amount"])
+
+        all_sup_ids = sorted(
+            list(
+                set(
+                    (
+                        df_sup["Supplier_ID"].dropna().astype(str).str.strip().tolist()
+                        if not df_sup.empty
+                        else []
                     )
+                    + list(op_pay_map.keys())
+                    + list(credit_pur_map.keys())
+                    + list(paid_map.keys())
+                )
+            )
+        )
+
+        supplier_credit_rows = []
+        supplier_balances = {}
+        for sid in all_sup_ids:
+            if not sid:
+                continue
+            op_amt = round(op_pay_map[sid], 2)
+            cr_amt = round(credit_pur_map[sid], 2)
+            pd_amt = round(paid_map[sid], 2)
+            net_bal = round(op_amt + cr_amt - pd_amt, 2)
+            supplier_balances[sid] = net_bal
+            info = sup_info_dict.get(sid, {})
+            supplier_credit_rows.append(
+                {
+                    "Supplier ID": sid,
+                    "Supplier Name": info.get("name") or sup_name_dict.get(sid, sid),
+                    "Phone": info.get("phone", ""),
+                    "Opening Owed (ETB)": op_amt,
+                    "Credit Purchases (ETB)": cr_amt,
+                    "Payments Settled (ETB)": pd_amt,
+                    "Net Balance Owed (ETB)": net_bal,
+                }
+            )
+        df_sup_credit = pd.DataFrame(supplier_credit_rows)
 
         # =====================================================================
         # ROLE-BASED TAB VISIBILITY (NO DUPLICATE TAB INDICES)
@@ -1536,6 +1678,48 @@ if _run_app:
                     else:
                         st.info("No component/stage breakdown data yet.")
 
+                st.divider()
+                st.subheader("💳 Supplier Credit & Payables Audit")
+                if not df_sup_credit.empty:
+                    df_sc_show = df_sup_credit.sort_values(
+                        "Net Balance Owed (ETB)", ascending=False
+                    )
+                    st.dataframe(
+                        df_sc_show.style.format(
+                            {
+                                "Opening Owed (ETB)": "ETB {:,.2f}",
+                                "Credit Purchases (ETB)": "ETB {:,.2f}",
+                                "Payments Settled (ETB)": "ETB {:,.2f}",
+                                "Net Balance Owed (ETB)": "ETB {:,.2f}",
+                            }
+                        ).map(color_negative_red, subset=["Net Balance Owed (ETB)"]),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                    sc1, sc2 = st.columns(2)
+                    fin_sig = sc1.text_input(
+                        "Finance / Purchaser Signature Name:",
+                        user_name,
+                        key="sc_pdf_fin",
+                    )
+                    mgr_sig_sc = sc2.text_input(
+                        "Production Manager Signature Name:",
+                        "_________________",
+                        key="sc_pdf_mgr",
+                    )
+                    sc_pdf = generate_supplier_credit_pdf(
+                        df_sc_show, fin_sig, mgr_sig_sc
+                    )
+                    st.download_button(
+                        "📥 Download Supplier Credit Audit PDF",
+                        data=sc_pdf,
+                        file_name=f"BedSolution_Supplier_Credit_Audit_{datetime.date.today()}.pdf",
+                        mime="application/pdf",
+                        type="primary",
+                    )
+                else:
+                    st.info("No supplier credit or opening payable balances recorded yet.")
+
         # ---------------------------------------------------------------------
         # TAB: ISSUE MATERIAL BY BATCH NUMBER (1 BED = 1 BATCH RULE)
         # ---------------------------------------------------------------------
@@ -1595,7 +1779,13 @@ if _run_app:
                         )
                         clean_bno = new_b_no.strip().upper()
                         existing_batches = (
-                            set(df_batches["Batch_No"].dropna().astype(str).str.strip().str.upper())
+                            set(
+                                df_batches["Batch_No"]
+                                .dropna()
+                                .astype(str)
+                                .str.strip()
+                                .str.upper()
+                            )
                             if not df_batches.empty
                             else set()
                         )
@@ -2008,7 +2198,7 @@ if _run_app:
             with tab_map["intel"]:
                 st.subheader("🧠 Smart Manufacturing Intelligence & Cost Optimization")
                 st.caption(
-                    "Automated diagnostics comparing batch unit efficiency, material price inflation, and stockout runway."
+                    "Automated diagnostics comparing batch unit efficiency, material price inflation, stockout runway, and supplier credit exposure."
                 )
 
                 st.markdown("#### 1️⃣ Batch Unit Cost Efficiency & Anomaly Detector")
@@ -2202,6 +2392,36 @@ if _run_app:
                             "Price inflation comparisons appear once a material has 2 or more recorded purchases."
                         )
 
+                st.divider()
+
+                st.markdown("#### 4️⃣ Supplier Credit Concentration & Exposure")
+                if not df_sup_credit.empty:
+                    pos_debt = df_sup_credit[df_sup_credit["Net Balance Owed (ETB)"] > 0].sort_values(
+                        "Net Balance Owed (ETB)", ascending=False
+                    )
+                    if not pos_debt.empty:
+                        st.bar_chart(
+                            pos_debt.set_index("Supplier Name")[["Net Balance Owed (ETB)"]],
+                            color=AMBER_GOLD,
+                            use_container_width=True,
+                        )
+                    st.dataframe(
+                        df_sup_credit.sort_values(
+                            "Net Balance Owed (ETB)", ascending=False
+                        ).style.format(
+                            {
+                                "Opening Owed (ETB)": "ETB {:,.2f}",
+                                "Credit Purchases (ETB)": "ETB {:,.2f}",
+                                "Payments Settled (ETB)": "ETB {:,.2f}",
+                                "Net Balance Owed (ETB)": "ETB {:,.2f}",
+                            }
+                        ).map(color_negative_red, subset=["Net Balance Owed (ETB)"]),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                else:
+                    st.info("No supplier credit balances available.")
+
         # ---------------------------------------------------------------------
         # TAB: LIVE INVENTORY (EXACT DECIMALS)
         # ---------------------------------------------------------------------
@@ -2289,7 +2509,7 @@ if _run_app:
                     "📝 Material Purchase Requests (Maker → Approver → Purchaser)"
                 )
                 st.caption(
-                    "Maker submits purchase requests • Approver approves/rejects • Purchaser converts approved items directly into Purchases."
+                    "Maker submits purchase requests • Approver approves/rejects & downloads Approval PDF • Purchaser converts approved items directly into Purchases."
                 )
 
                 if "pr_flash" in st.session_state:
@@ -2665,18 +2885,37 @@ if _run_app:
                         )
                         app_sig = cs_pr2.text_input(
                             "Approved By Signature Name:",
-                            "_________________",
+                            user_name if can_approve_req else "_________________",
                             key="pr_pdf_app",
                         )
+                        d_col1, d_col2 = st.columns(2)
                         if not df_pr_view.empty:
                             pr_pdf = generate_purchase_request_pdf(
                                 df_pr_view, req_sig, app_sig
                             )
-                            st.download_button(
+                            d_col1.download_button(
                                 "📥 Download Purchase Request Form PDF",
                                 data=pr_pdf,
                                 file_name=f"BedSolution_Purchase_Requests_{datetime.date.today()}.pdf",
                                 mime="application/pdf",
+                                use_container_width=True,
+                            )
+
+                        approved_only_df = df_pr[
+                            df_pr["Status"].astype(str).str.strip().str.lower()
+                            == "approved"
+                        ]
+                        if not approved_only_df.empty:
+                            app_pdf = generate_purchase_approval_pdf(
+                                approved_only_df, app_sig, "_________________"
+                            )
+                            d_col2.download_button(
+                                "📄 Download Purchase Request Approval PDF",
+                                data=app_pdf,
+                                file_name=f"BedSolution_Purchase_Approval_{datetime.date.today()}.pdf",
+                                mime="application/pdf",
+                                type="primary",
+                                use_container_width=True,
                             )
 
                 with pr_sub3:
@@ -3213,19 +3452,16 @@ if _run_app:
 
                 with sd2:
                     st.markdown("**📋 Registered Suppliers & Live Credit Balances**")
-                    if not df_sup.empty:
-                        df_sup_view = df_sup.copy()
-                        df_sup_view["Balance Owed (ETB)"] = df_sup_view[
-                            "Supplier_ID"
-                        ].apply(
-                            lambda sid: supplier_balances.get(
-                                str(sid).strip(), 0.0
-                            )
-                        )
+                    if not df_sup_credit.empty:
                         st.dataframe(
-                            df_sup_view.style.format(
-                                {"Balance Owed (ETB)": "ETB {:,.2f}"}
-                            ),
+                            df_sup_credit.style.format(
+                                {
+                                    "Opening Owed (ETB)": "ETB {:,.2f}",
+                                    "Credit Purchases (ETB)": "ETB {:,.2f}",
+                                    "Payments Settled (ETB)": "ETB {:,.2f}",
+                                    "Net Balance Owed (ETB)": "ETB {:,.2f}",
+                                }
+                            ).map(color_negative_red, subset=["Net Balance Owed (ETB)"]),
                             use_container_width=True,
                             hide_index=True,
                         )
