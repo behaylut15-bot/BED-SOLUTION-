@@ -460,8 +460,44 @@ def generate_stock_audit_pdf(month_label, op_qty, op_val, in_qty, in_val, out_qt
     pdf.set_xy(115, sig_y + 15); pdf.cell(70, 5, "Signature: _______________________", align='L')
     return bytes(pdf.output())
 
+def generate_purchase_request_pdf(req_rows_df, sig_req, sig_app):
+    pdf = _init_pdf(font_ready); f_name = pdf.font_name; pdf.add_page()
+    _draw_report_header(pdf, f_name, "Material Purchase Request Form", "Bed Solution Production & Store Requisition")
+
+    total_est = req_rows_df['Est_Total'].sum() if (not req_rows_df.empty and 'Est_Total' in req_rows_df.columns) else 0.0
+    _draw_total_box(pdf, f_name, "Total Estimated Request Value", total_est); pdf.ln(8)
+
+    headers = ["Req ID", "Date (EC)", "Batch No", "Material", "Qty", "Est. Unit", "Est. Total", "Status"]
+    rows = []
+    if not req_rows_df.empty:
+        for _, r in req_rows_df.iterrows():
+            rows.append([
+                str(r.get('Request_ID', ''))[:14],
+                str(to_ethiopian(r.get('Date', '')))[:16],
+                str(r.get('Batch_No', 'General'))[:14],
+                str(r.get('Material_Name', r.get('Material_ID', '')))[:22],
+                fmt_qty(r.get('Requested_Qty', 0)),
+                f"{float(r.get('Est_Unit_Cost', 0)):,.2f}",
+                f"{float(r.get('Est_Total', 0)):,.2f}",
+                str(r.get('Status', 'Pending'))[:12]
+            ])
+    _draw_table(pdf, f_name, headers, rows, font_size=6.5)
+
+    pdf.ln(15); pdf.set_font(f_name, '', 9); sig_y = pdf.get_y()
+    if sig_y > pdf.h - 40:
+        pdf.add_page(); sig_y = pdf.get_y() + 10
+
+    pdf.set_xy(15, sig_y); pdf.cell(70, 5, "Requested By (Maker):", align='L')
+    pdf.set_xy(15, sig_y + 10); pdf.cell(70, 5, f"Name: {sig_req}", align='L')
+    pdf.set_xy(15, sig_y + 15); pdf.cell(70, 5, "Signature: _______________________", align='L')
+
+    pdf.set_xy(115, sig_y); pdf.cell(70, 5, "Approved By (Approver / Manager):", align='L')
+    pdf.set_xy(115, sig_y + 10); pdf.cell(70, 5, f"Name: {sig_app}", align='L')
+    pdf.set_xy(115, sig_y + 15); pdf.cell(70, 5, "Signature: _______________________", align='L')
+    return bytes(pdf.output())
+
 # =====================================================================
-# AUTHENTICATION
+# AUTHENTICATION (MAKER / APPROVER / PURCHASER / MANAGER)
 # =====================================================================
 def authenticate():
     if "user" in st.session_state:
@@ -471,14 +507,13 @@ def authenticate():
     users_secrets = _safe_users_secret()
 
     if not users_secrets:
-        pwd = st.text_input("Password", type="password", key="legacy_pwd")
-        if st.button("Login", type="primary"):
-            if pwd == _safe_secret("app_password", "BED2026"):
-                st.session_state.user = {"username": "manager", "name": "Manager", "role": "manager"}
-                st.rerun()
-            else:
-                st.error("❌ Wrong password")
-        return False
+        default_pwd = _safe_secret("app_password", "BED2026")
+        users_secrets = {
+            "manager": {"name": "Production Manager", "role": "manager", "password": default_pwd},
+            "maker": {"name": "Store / Production Maker", "role": "maker", "password": default_pwd},
+            "approver": {"name": "Request Approver", "role": "approver", "password": default_pwd},
+            "purchaser": {"name": "Procurement Purchaser", "role": "purchaser", "password": default_pwd},
+        }
 
     user_options = {}
     for uname, udata in users_secrets.items():
@@ -487,7 +522,7 @@ def authenticate():
         user_options[f"{display_name} ({role_name})"] = uname
 
     with st.form("login_form", clear_on_submit=False):
-        selected_display = st.selectbox("Select User Profile:", list(user_options.keys()))
+        selected_display = st.selectbox("Select User Profile (Role):", list(user_options.keys()))
         password = st.text_input("Password", type="password")
         submitted = st.form_submit_button("Login", type="primary", use_container_width=True)
 
@@ -498,7 +533,7 @@ def authenticate():
             st.session_state.user = {
                 "username": uname,
                 "name": user_data.get("name", uname),
-                "role": user_data.get("role", "manager")
+                "role": str(user_data.get("role", "manager")).strip().lower()
             }
             st.rerun()
         else:
@@ -560,8 +595,26 @@ if _run_app:
         role = str(user.get("role", "manager")).strip().lower()
         user_name = user.get("name", user.get("username", "Manager"))
 
+        # LIQ-Style Role Permissions Matrix:
+        # - maker: Create Purchase Requests, Issue Materials by Batch, View Inventory
+        # - approver: Approve / Reject Purchase Requests, Audit & Reports
+        # - purchaser: Convert Approved Requests -> Purchases, Record Purchases & Suppliers, Set Opening Balances
+        # - manager / admin / owner: Full Access to all Maker, Approver & Purchaser actions
+        can_make_request   = role in ["maker", "manager", "admin", "owner"]
+        can_approve_req    = role in ["approver", "manager", "admin", "owner"]
+        can_purchase       = role in ["purchaser", "manager", "admin", "owner"]
+        can_issue_batch    = role in ["maker", "storekeeper", "manager", "admin", "owner"]
+
         with st.sidebar:
-            st.markdown(f'<div class="user-badge">🛏️ {user_name}<br><span style="font-size:11px; color:#FFFFFF;">{role.upper()}</span></div>', unsafe_allow_html=True)
+            role_desc_map = {
+                "maker": "MAKER • Request & Issue",
+                "approver": "APPROVER • Approve & Audit",
+                "purchaser": "PURCHASER • Buy & Stock In",
+                "manager": "MANAGER • Full Control",
+                "admin": "ADMIN • Full Control"
+            }
+            role_sub = role_desc_map.get(role, role.upper())
+            st.markdown(f'<div class="user-badge">🛏️ {user_name}<br><span style="font-size:11px; color:#FFFFFF;">{role_sub}</span></div>', unsafe_allow_html=True)
             c_sb1, c_sb2 = st.columns(2)
             if c_sb1.button("🚪 Logout", use_container_width=True):
                 del st.session_state.user
@@ -657,6 +710,7 @@ if _run_app:
                 "Supplier_Payments": get_sheet_df(sheet, "Supplier_Payments"),
                 "Opening_Payables": get_sheet_df(sheet, "Opening_Payables"),
                 "Employees": get_sheet_df(sheet, "Employees"),
+                "Purchase_Requests": get_sheet_df(sheet, "Purchase_Requests"),
             }
 
         data = load_bed_data()
@@ -669,6 +723,7 @@ if _run_app:
         df_pay      = data["Supplier_Payments"]
         df_op_pay   = data["Opening_Payables"]
         df_emp      = data["Employees"]
+        df_pr       = data["Purchase_Requests"]
 
         # Normalize empty DataFrames with expected columns
         if df_mat.empty:
@@ -693,6 +748,15 @@ if _run_app:
             df_pay = pd.DataFrame(columns=['Date', 'Supplier_ID', 'Amount'])
         if df_op_pay.empty:
             df_op_pay = pd.DataFrame(columns=['Supplier_ID', 'Amount_Owed'])
+        if df_pr.empty:
+            df_pr = pd.DataFrame(columns=[
+                'Request_ID', 'Date', 'Batch_No', 'Material_ID', 'Material_Name',
+                'Requested_Qty', 'Est_Unit_Cost', 'Est_Total', 'Requested_By',
+                'Priority', 'Status', 'Approved_By', 'Notes'
+            ])
+        for pr_col in ['Requested_Qty', 'Est_Unit_Cost', 'Est_Total']:
+            if pr_col in df_pr.columns and not df_pr.empty:
+                df_pr[pr_col] = pd.to_numeric(df_pr[pr_col].astype(str).str.replace(',', '', regex=False), errors='coerce').fillna(0.0)
 
         # Clean IDs & numeric fields (Preserving full decimals: 0.5, 0.7, etc.)
         for col in ['Supplier_ID', 'Material_ID', 'Batch_No', 'Employee_ID']:
@@ -837,12 +901,16 @@ if _run_app:
         # =====================================================================
         # NAVIGATION TABS
         # =====================================================================
+        pending_pr_count = len(df_pr[df_pr['Status'].astype(str).str.strip().str.lower() == 'pending']) if (not df_pr.empty and 'Status' in df_pr.columns) else 0
+        pr_tab_label = f"📝 Purchase Requests ({pending_pr_count})" if pending_pr_count > 0 else "📝 Purchase Requests"
+
         tabs = st.tabs([
             "📊 Executive Summary",
             "📤 Issue Material by Batch",
             "🛏️ Batch Costing & BOM",
             "🧠 Smart Production Intelligence",
             "📦 Live Inventory (Decimals)",
+            pr_tab_label,
             "🛒 Record Purchase / Stock In",
             "📈 Monthly Stock Audit"
         ])
@@ -904,6 +972,8 @@ if _run_app:
         # ---------------------------------------------------------------------
         with tabs[1]:
             st.subheader("📤 Issue Raw Materials by Batch Number")
+            if not can_issue_batch:
+                st.warning(f"🔒 Your role (**{role.upper()}**) has read-only access here. Switch to **Maker** or **Manager** to create batches or issue materials.")
             st.caption("Supports exact decimal quantities (`0.5`, `0.7`, `1.25`, etc.) and automatically deducts from FIFO inventory in Google Sheets.")
 
             if "issue_flash" in st.session_state:
@@ -930,7 +1000,7 @@ if _run_app:
                     target_qty = 1
                     b_date = st.date_input("Batch Start Date:", value=datetime.date.today())
                     b_notes = st.text_input("Batch Notes (optional):", placeholder="e.g. Serial / Showroom / Client bed")
-                    create_b_btn = st.form_submit_button("✨ Register Single-Bed Batch", type="primary", use_container_width=True)
+                    create_b_btn = st.form_submit_button("✨ Register Single-Bed Batch", type="primary", use_container_width=True, disabled=not can_issue_batch)
 
                 if create_b_btn:
                     final_model = custom_model.strip() if custom_model.strip() else bed_model
@@ -938,7 +1008,7 @@ if _run_app:
                     if not clean_bno:
                         st.error("Please enter a Batch Number.")
                     elif not df_batches.empty and clean_bno in df_batches['Batch_No'].values:
-                        st.warning(f"Batch `{clean_bno}` already exists! Each bed batch number must be unique.")
+                        st.warning(f"Batch `{clean_bno}` already exists! Each bed batch number must must be unique.")
                     else:
                         try:
                             b_ws = _ensure_sheet("Batches", ["Batch_No", "Bed_Model", "Batch_Date", "Bed_Qty", "Status", "Notes"])
@@ -1025,7 +1095,7 @@ if _run_app:
 
                     iss_notes = st.text_input("Issue Notes (optional):", placeholder="e.g. Top layer high-density foam")
 
-                    if st.button("🚀 Confirm & Issue Selected Materials to Batch", type="primary", use_container_width=True):
+                    if st.button("🚀 Confirm & Issue Selected Materials to Batch", type="primary", use_container_width=True, disabled=not can_issue_batch):
                         if sel_batch == "NO-BATCH":
                             st.error("Please create a Batch Number first on the left.")
                         else:
@@ -1079,7 +1149,6 @@ if _run_app:
                     list(batch_costs.keys())
                 )), reverse=True)
 
-                # Summary comparison table across all batches
                 summary_rows = []
                 for bno in all_b_nos:
                     b_meta = df_batches[df_batches['Batch_No'] == bno].iloc[0] if (not df_batches.empty and not df_batches[df_batches['Batch_No'] == bno].empty) else {}
@@ -1156,13 +1225,12 @@ if _run_app:
                         st.info("No materials have been issued to this batch yet.")
 
         # ---------------------------------------------------------------------
-        # TAB 4: SMART PRODUCTION INTELLIGENCE (ANOMALY, REORDER & EFFICIENCY)
+        # TAB 4: SMART PRODUCTION INTELLIGENCE
         # ---------------------------------------------------------------------
         with tabs[3]:
             st.subheader("🧠 Smart Manufacturing Intelligence & Cost Optimization")
             st.caption("Automated diagnostics comparing batch unit efficiency, material price inflation, and stockout runway.")
 
-            # 1. SMART UNIT COST BENCHMARKING ACROSS BATCHES
             st.markdown("#### 1️⃣ Batch Unit Cost Efficiency & Anomaly Detector")
             if not df_batches.empty and batch_costs:
                 eff_rows = []
@@ -1205,7 +1273,6 @@ if _run_app:
 
             st.divider()
 
-            # 2. PREDICTIVE REORDER & DAYS-OF-SUPPLY ENGINE
             st.markdown("#### 2️⃣ Predictive Stockout & Reorder Advisor (30-Day Burn Rate)")
             if not df_mat.empty and current_stock:
                 thirty_days_ago = pd.Timestamp.now() - pd.Timedelta(days=30)
@@ -1254,7 +1321,6 @@ if _run_app:
 
             st.divider()
 
-            # 3. SUPPLIER INFLATION TRACKER
             st.markdown("#### 3️⃣ Raw Material Price Inflation Tracker")
             if not df_pur.empty and not df_mat.empty:
                 df_pv = df_pur[df_pur['Unit_Cost'] > 0].sort_values('Date').merge(df_mat[['Material_ID', 'Material_Name']], on='Material_ID', how='left')
@@ -1280,7 +1346,7 @@ if _run_app:
                     st.info("Price inflation comparisons appear once a material has 2 or more recorded purchases.")
 
         # ---------------------------------------------------------------------
-        # TAB 5: LIVE INVENTORY (EXACT DECIMALS: 0.5, 0.7, ETC.)
+        # TAB 5: LIVE INVENTORY (EXACT DECIMALS)
         # ---------------------------------------------------------------------
         with tabs[4]:
             st.subheader("📦 Live Raw Material Inventory (Exact Decimal Precision)")
@@ -1338,10 +1404,290 @@ if _run_app:
                     st.info("Warehouse stock is empty.")
 
         # ---------------------------------------------------------------------
-        # TAB 6: RECORD PURCHASE & ADD NEW MATERIAL
+        # TAB 6: PURCHASE REQUESTS (MAKER -> APPROVER -> PURCHASER)
         # ---------------------------------------------------------------------
         with tabs[5]:
+            st.subheader("📝 Material Purchase Requests (Maker → Approver → Purchaser)")
+            st.caption("Maker submits purchase requests • Approver approves/rejects • Purchaser converts approved items directly into Purchases.")
+
+            if "pr_flash" in st.session_state:
+                st.success(st.session_state.pop("pr_flash"))
+
+            pr_sub1, pr_sub2, pr_sub3 = st.tabs([
+                "➕ 1. Submit Request (Maker)",
+                f"✅ 2. Approve Requests ({pending_pr_count} Pending)",
+                "🔄 3. Convert Approved to Purchase (Purchaser)"
+            ])
+
+            # SUBTAB 1: SUBMIT PURCHASE REQUEST (MAKER ROLE)
+            with pr_sub1:
+                if not can_make_request:
+                    st.warning(f"🔒 Role Restriction: Only **Maker** or **Manager** profiles can submit new Purchase Requests (Current role: **{role.upper()}**).")
+                elif df_mat.empty:
+                    st.warning("Add raw materials first in **🛒 Record Purchase / Stock In** before creating purchase requests.")
+                else:
+                    c_pr1, c_pr2 = st.columns([1.4, 1], gap="large")
+                    with c_pr1:
+                        st.markdown("#### Select Materials to Request")
+                        pr_search = st.text_input("🔍 Filter Materials:", placeholder="Search foam, fabric, spring, wood...", key="pr_mat_search")
+                        df_pr_mat = df_mat.copy()
+                        if pr_search.strip():
+                            df_pr_mat = df_pr_mat[df_pr_mat['Material_Name'].str.contains(pr_search.strip(), case=False, na=False)]
+
+                        pr_editor_df = pd.DataFrame({
+                            'Request?': [False] * len(df_pr_mat),
+                            'Material': df_pr_mat['Material_Name'].values,
+                            'Unit': df_pr_mat['Unit'].fillna('pcs').values,
+                            'In Stock': [current_stock.get(mid, 0.0) for mid in df_pr_mat['Material_ID']],
+                            'Reorder Lvl': [float(r or 0) for r in df_pr_mat['Reorder_Level']],
+                            'Request Qty': [1.0] * len(df_pr_mat),
+                            'Est. Unit Cost': [float(unit_cost_lookup.get(mid, 0.0)) for mid in df_pr_mat['Material_ID']]
+                        })
+
+                        edited_pr = st.data_editor(
+                            pr_editor_df,
+                            column_config={
+                                'Request?': st.column_config.CheckboxColumn('Select', default=False),
+                                'Material': st.column_config.TextColumn('Raw Material', disabled=True, width="large"),
+                                'Unit': st.column_config.TextColumn('Unit', disabled=True, width="small"),
+                                'In Stock': st.column_config.NumberColumn('In Stock', disabled=True, format="%.2f"),
+                                'Reorder Lvl': st.column_config.NumberColumn('Min Lvl', disabled=True, format="%.2f"),
+                                'Request Qty': st.column_config.NumberColumn('Req Qty', min_value=0.01, step=0.5, format="%.2f"),
+                                'Est. Unit Cost': st.column_config.NumberColumn('Est. Cost (ETB)', min_value=0.0, step=10.0, format="%.2f")
+                            },
+                            hide_index=True,
+                            use_container_width=True,
+                            height=330,
+                            key="pr_create_editor"
+                        )
+
+                    with c_pr2:
+                        st.markdown("#### Request Details")
+                        pr_batch_opts = ["GENERAL-STOCK"] + (df_batches['Batch_No'].dropna().tolist() if not df_batches.empty else [])
+                        pr_batch_map = {"GENERAL-STOCK": "General Warehouse Restock"}
+                        if not df_batches.empty:
+                            for _, br in df_batches.iterrows():
+                                bno = str(br['Batch_No']).strip()
+                                if bno:
+                                    pr_batch_map[bno] = f"{bno} — {br.get('Bed_Model', '')}"
+
+                        sel_pr_batch = st.selectbox("For Batch / Purpose:", pr_batch_opts, format_func=lambda x: pr_batch_map.get(x, x), key="pr_batch_sel")
+                        pr_priority = st.selectbox("Urgency / Priority:", ["Normal", "Urgent (Production Blocking)", "Low / Restock"], key="pr_prio_sel")
+                        pr_date = st.date_input("Request Date:", value=datetime.date.today(), key="pr_dt_inp")
+                        pr_notes = st.text_area("Justification / Notes:", placeholder="e.g. Needed for upcoming Queen mattress batches", height=90, key="pr_notes_inp")
+
+                        if st.button("📨 Submit Purchase Request", type="primary", use_container_width=True):
+                            pr_rows_to_add = []
+                            ts_pr = datetime.datetime.now().strftime('%y%m%d%H%M%S')
+                            for idx, r in edited_pr.iterrows():
+                                if r['Request?']:
+                                    rq = round(float(r['Request Qty']), 4)
+                                    if rq <= 0:
+                                        continue
+                                    mid = df_pr_mat.iloc[idx]['Material_ID']
+                                    uc = float(r['Est. Unit Cost'])
+                                    pr_rows_to_add.append([
+                                        f"PR-{ts_pr}-{len(pr_rows_to_add)+1:02d}",
+                                        pr_date.strftime("%Y-%m-%d"),
+                                        sel_pr_batch,
+                                        mid,
+                                        mat_name_dict.get(mid, mid),
+                                        rq,
+                                        uc,
+                                        round(rq * uc, 2),
+                                        user_name,
+                                        pr_priority,
+                                        "Pending",
+                                        "",
+                                        pr_notes.strip()
+                                    ])
+                            if not pr_rows_to_add:
+                                st.warning("Please check at least one material and enter Request Qty > 0.")
+                            else:
+                                try:
+                                    pr_ws = _ensure_sheet("Purchase_Requests", [
+                                        "Request_ID", "Date", "Batch_No", "Material_ID", "Material_Name",
+                                        "Requested_Qty", "Est_Unit_Cost", "Est_Total", "Requested_By",
+                                        "Priority", "Status", "Approved_By", "Notes"
+                                    ])
+                                    pr_ws.append_rows(pr_rows_to_add, value_input_option='USER_ENTERED')
+                                    st.session_state.pr_flash = f"✅ Submitted {len(pr_rows_to_add)} purchase request item(s) for Approver review!"
+                                    load_bed_data.clear()
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Failed to submit purchase request: {e}")
+
+            # SUBTAB 2: APPROVAL QUEUE & STATUS TRACKER (APPROVER ROLE)
+            with pr_sub2:
+                if df_pr.empty:
+                    st.info("No purchase requests submitted yet.")
+                else:
+                    status_filter = st.multiselect(
+                        "Filter by Status:",
+                        ["Pending", "Approved", "Purchased", "Rejected"],
+                        default=["Pending", "Approved"],
+                        key="pr_status_filter"
+                    )
+                    df_pr_view = df_pr.copy()
+                    if status_filter:
+                        df_pr_view = df_pr_view[df_pr_view['Status'].isin(status_filter)]
+
+                    st.dataframe(
+                        df_pr_view.style.format({
+                            'Requested_Qty': '{:g}',
+                            'Est_Unit_Cost': 'ETB {:,.2f}',
+                            'Est_Total': 'ETB {:,.2f}'
+                        }),
+                        use_container_width=True,
+                        hide_index=True
+                    )
+
+                    pending_df = df_pr[df_pr['Status'].astype(str).str.strip().str.lower() == 'pending']
+                    if not pending_df.empty:
+                        st.markdown("#### 🛡️ Approver / Manager Action")
+                        if not can_approve_req:
+                            st.info(f"🔒 Only **Approver** or **Manager** profiles can approve or reject requests (Current role: **{role.upper()}**).")
+                        else:
+                            pend_ids = pending_df['Request_ID'].tolist()
+                            pend_labels = {
+                                r['Request_ID']: f"{r['Request_ID']} — {r['Material_Name']} ({fmt_qty(r['Requested_Qty'])}) | Est: ETB {float(r['Est_Total']):,.2f} [{r['Priority']}]"
+                                for _, r in pending_df.iterrows()
+                            }
+                            sel_approve_ids = st.multiselect(
+                                "Select Pending Request(s) to Approve or Reject:",
+                                pend_ids,
+                                format_func=lambda x: pend_labels.get(x, x),
+                                key="pr_approve_multi"
+                            )
+                            ca1, ca2 = st.columns(2)
+                            if ca1.button("✅ Approve Selected Requests", type="primary", use_container_width=True):
+                                if not sel_approve_ids:
+                                    st.warning("Select at least one pending request.")
+                                else:
+                                    try:
+                                        pr_ws = _ensure_sheet("Purchase_Requests", [
+                                            "Request_ID", "Date", "Batch_No", "Material_ID", "Material_Name",
+                                            "Requested_Qty", "Est_Unit_Cost", "Est_Total", "Requested_By",
+                                            "Priority", "Status", "Approved_By", "Notes"
+                                        ])
+                                        all_vals = pr_ws.get_all_values()
+                                        hdr = all_vals[0]
+                                        st_col = hdr.index("Status") + 1
+                                        ap_col = hdr.index("Approved_By") + 1
+                                        for r_idx, row_vals in enumerate(all_vals[1:], start=2):
+                                            if row_vals and row_vals[0] in sel_approve_ids:
+                                                pr_ws.update_cell(r_idx, st_col, "Approved")
+                                                pr_ws.update_cell(r_idx, ap_col, user_name)
+                                        st.session_state.pr_flash = f"✅ Approved {len(sel_approve_ids)} purchase request(s)!"
+                                        load_bed_data.clear()
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Approval update failed: {e}")
+
+                            if ca2.button("❌ Reject Selected Requests", use_container_width=True):
+                                if not sel_approve_ids:
+                                    st.warning("Select at least one pending request.")
+                                else:
+                                    try:
+                                        pr_ws = _ensure_sheet("Purchase_Requests", [
+                                            "Request_ID", "Date", "Batch_No", "Material_ID", "Material_Name",
+                                            "Requested_Qty", "Est_Unit_Cost", "Est_Total", "Requested_By",
+                                            "Priority", "Status", "Approved_By", "Notes"
+                                        ])
+                                        all_vals = pr_ws.get_all_values()
+                                        hdr = all_vals[0]
+                                        st_col = hdr.index("Status") + 1
+                                        ap_col = hdr.index("Approved_By") + 1
+                                        for r_idx, row_vals in enumerate(all_vals[1:], start=2):
+                                            if row_vals and row_vals[0] in sel_approve_ids:
+                                                pr_ws.update_cell(r_idx, st_col, "Rejected")
+                                                pr_ws.update_cell(r_idx, ap_col, user_name)
+                                        st.session_state.pr_flash = f"❌ Rejected {len(sel_approve_ids)} purchase request(s)."
+                                        load_bed_data.clear()
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Rejection update failed: {e}")
+
+                    st.divider()
+                    cs_pr1, cs_pr2 = st.columns(2)
+                    req_sig = cs_pr1.text_input("Requested By Signature Name:", user_name, key="pr_pdf_req")
+                    app_sig = cs_pr2.text_input("Approved By Signature Name:", "_________________", key="pr_pdf_app")
+                    if not df_pr_view.empty:
+                        pr_pdf = generate_purchase_request_pdf(df_pr_view, req_sig, app_sig)
+                        st.download_button(
+                            "📥 Download Purchase Request Form PDF",
+                            data=pr_pdf,
+                            file_name=f"BedSolution_Purchase_Requests_{datetime.date.today()}.pdf",
+                            mime="application/pdf"
+                        )
+
+            # SUBTAB 3: CONVERT APPROVED REQUEST DIRECTLY INTO PURCHASE (PURCHASER ROLE)
+            with pr_sub3:
+                approved_df = df_pr[df_pr['Status'].astype(str).str.strip().str.lower() == 'approved'] if not df_pr.empty else pd.DataFrame()
+                if not can_purchase:
+                    st.warning(f"🔒 Role Restriction: Only **Purchaser** or **Manager** profiles can convert approved requests into Purchases (Current role: **{role.upper()}**).")
+                elif approved_df.empty:
+                    st.info("No **Approved** purchase requests waiting to be received into stock.")
+                else:
+                    st.markdown("#### Convert Approved Request into Recorded Purchase & Stock In")
+                    app_ids = approved_df['Request_ID'].tolist()
+                    app_labels = {
+                        r['Request_ID']: f"{r['Request_ID']} — {r['Material_Name']} ({fmt_qty(r['Requested_Qty'])}) | Est: ETB {float(r['Est_Unit_Cost']):,.2f}/unit"
+                        for _, r in approved_df.iterrows()
+                    }
+                    sel_conv_id = st.selectbox("Select Approved Request:", app_ids, format_func=lambda x: app_labels.get(x, x), key="conv_pr_sel")
+                    conv_row = approved_df[approved_df['Request_ID'] == sel_conv_id].iloc[0]
+
+                    with st.form("convert_pr_to_purchase_form"):
+                        sup_ids_c = [""] + (df_sup['Supplier_ID'].tolist() if not df_sup.empty else [])
+                        conv_sup = st.selectbox(
+                            "Supplier:",
+                            sup_ids_c,
+                            format_func=lambda x: f"{x} — {sup_name_dict.get(x, x)}" if x else "Cash / Walk-in Supplier"
+                        )
+                        cc1, cc2, cc3 = st.columns(3)
+                        conv_qty = cc1.number_input("Actual Purchased Qty:", min_value=0.01, value=float(conv_row['Requested_Qty']), step=0.5, format="%.2f")
+                        conv_cost = cc2.number_input("Actual Unit Cost (ETB):", min_value=0.0, value=float(conv_row['Est_Unit_Cost']), step=10.0)
+                        conv_ptype = cc3.selectbox("Payment Type:", ["Cash", "Credit"])
+                        cc4, cc5 = st.columns(2)
+                        conv_date = cc4.date_input("Purchase Date:", value=datetime.date.today())
+                        conv_inv = cc5.text_input("Invoice / Receipt No:")
+                        conv_submit = st.form_submit_button("💾 Record Purchase & Mark Request Purchased", type="primary", use_container_width=True)
+
+                    if conv_submit:
+                        try:
+                            pur_ws = _ensure_sheet("Purchases", ["Purchase_ID", "Date", "Material_ID", "Supplier_ID", "Supplier_Name", "Qty", "Unit_Cost", "Payment_Type", "Invoice_No", "Notes"])
+                            pid = f"PUR-{datetime.datetime.now().strftime('%y%m%d%H%M%S')}"
+                            pur_ws.append_row([
+                                pid, conv_date.strftime("%Y-%m-%d"), conv_row['Material_ID'], conv_sup,
+                                sup_name_dict.get(conv_sup, ""), float(conv_qty), float(conv_cost),
+                                conv_ptype, conv_inv, f"From {sel_conv_id} by {user_name}"
+                            ], value_input_option='USER_ENTERED')
+
+                            pr_ws = _ensure_sheet("Purchase_Requests", [
+                                "Request_ID", "Date", "Batch_No", "Material_ID", "Material_Name",
+                                "Requested_Qty", "Est_Unit_Cost", "Est_Total", "Requested_By",
+                                "Priority", "Status", "Approved_By", "Notes"
+                            ])
+                            all_vals = pr_ws.get_all_values()
+                            st_col = all_vals[0].index("Status") + 1
+                            for r_idx, row_vals in enumerate(all_vals[1:], start=2):
+                                if row_vals and row_vals[0] == sel_conv_id:
+                                    pr_ws.update_cell(r_idx, st_col, "Purchased")
+
+                            st.session_state.pr_flash = f"✅ Converted **{sel_conv_id}** into Purchase `{pid}` and added `{fmt_qty(conv_qty)}` units to stock!"
+                            load_bed_data.clear()
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Failed to convert request: {e}")
+
+        # ---------------------------------------------------------------------
+        # TAB 7: RECORD PURCHASE & ADD NEW MATERIAL (PURCHASER ROLE)
+        # ---------------------------------------------------------------------
+        with tabs[6]:
             st.subheader("🛒 Stock In — Record Purchase or Add New Material")
+            if not can_purchase:
+                st.warning(f"🔒 Role Restriction: Only **Purchaser** or **Manager** profiles can record purchases, add materials, or update suppliers (Current role: **{role.upper()}**).")
             c_p1, c_p2 = st.columns([1.3, 1], gap="large")
 
             with c_p1:
@@ -1372,7 +1718,7 @@ if _run_app:
 
                         p_inv = st.text_input("Invoice / Receipt No (optional):")
                         p_note = st.text_input("Notes (optional):")
-                        save_pur = st.form_submit_button("💾 Save Purchase to Google Sheets", type="primary", use_container_width=True)
+                        save_pur = st.form_submit_button("💾 Save Purchase to Google Sheets", type="primary", use_container_width=True, disabled=not can_purchase)
 
                     if save_pur:
                         try:
@@ -1395,7 +1741,7 @@ if _run_app:
                     new_mname = st.text_input("Material Name:", placeholder="e.g. High Density Foam 10cm")
                     new_unit = st.selectbox("Unit of Measure:", ["pcs", "meters", "sheets", "kg", "liters", "rolls", "sets"])
                     new_reord = st.number_input("Reorder Alert Level:", min_value=0.0, value=5.0, step=0.5)
-                    save_mat = st.form_submit_button("➕ Add Material", use_container_width=True)
+                    save_mat = st.form_submit_button("➕ Add Material", use_container_width=True, disabled=not can_purchase)
 
                 if save_mat and new_mname.strip():
                     try:
@@ -1421,7 +1767,7 @@ if _run_app:
                     ob_qty = st.number_input("Opening Qty:", min_value=0.0, value=0.5, step=0.1, format="%.2f", key="ob_qty_inp")
                     ob_ucost = st.number_input("Opening Unit Cost (ETB):", min_value=0.0, value=0.0, step=10.0, key="ob_ucost_inp")
                     ob_date = st.date_input("Opening Date:", value=datetime.date.today(), key="ob_dt_inp")
-                    save_ob_stk = st.form_submit_button("💾 Save Opening Stock", use_container_width=True)
+                    save_ob_stk = st.form_submit_button("💾 Save Opening Stock", use_container_width=True, disabled=not can_purchase)
 
                 if save_ob_stk and str(ob_m_id).strip():
                     try:
@@ -1446,7 +1792,7 @@ if _run_app:
                     else:
                         op_s_id = st.text_input("Supplier ID (e.g. SUP-001):", key="op_sup_txt")
                     op_amt = st.number_input("Opening Amount Owed (ETB):", min_value=0.0, value=0.0, step=100.0, key="op_amt_inp")
-                    save_op_pay = st.form_submit_button("💾 Save Opening Payable", use_container_width=True)
+                    save_op_pay = st.form_submit_button("💾 Save Opening Payable", use_container_width=True, disabled=not can_purchase)
 
                 if save_op_pay and str(op_s_id).strip():
                     try:
@@ -1471,7 +1817,7 @@ if _run_app:
                     new_saddr = st.text_input("Address / Location:", placeholder="e.g. Kality, Addis Ababa")
                     new_stin = st.text_input("TIN Number (optional):", placeholder="e.g. 0045128910")
                     new_snotes = st.text_input("Notes / Supplied Items:", placeholder="e.g. Foam, springs, fabric")
-                    save_sup_btn = st.form_submit_button("💾 Save Full Supplier Profile", type="primary", use_container_width=True)
+                    save_sup_btn = st.form_submit_button("💾 Save Full Supplier Profile", type="primary", use_container_width=True, disabled=not can_purchase)
 
                 if save_sup_btn:
                     if not new_sname.strip():
@@ -1499,9 +1845,6 @@ if _run_app:
                         use_container_width=True,
                         hide_index=True
                     )
-                else:
-                    st.info("No suppliers registered yet. Add your first supplier on the left.")
-
         # ---------------------------------------------------------------------
         # TAB 7: MONTHLY STOCK AUDIT (DECIMAL PRECISION + PDF)
         # ---------------------------------------------------------------------
