@@ -436,9 +436,7 @@ def _draw_table(pdf, f_name, headers, rows, font_size=7):
     pdf.set_text_color(*DARK)
 
     def _fit(text):
-        s = str(text).strip().replace("
-", " ").replace("
-", "")
+        s = str(text).strip().replace("\n", " ").replace("\r", "")
         if not s or s.lower() in ("nan", "none"):
             return ""
         while pdf.get_string_width(s) > (col_w - 1.5) and len(s) > 1:
