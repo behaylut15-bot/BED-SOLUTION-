@@ -209,7 +209,7 @@ def _find_all_matching_rows(ws, match_fn):
 # ============================================================
 # PROFESSIONAL PDF REPORT ENGINE (BED SOLUTION BRANDING)
 # ============================================================
-class BED SOLUTIONReportPDF(FPDF):
+class BEDSOLUTIONReportPDF(FPDF):
     def __init__(self, font_name="Helvetica"):
         super().__init__()
         self.font_name = font_name
@@ -229,13 +229,13 @@ class BED SOLUTIONReportPDF(FPDF):
 def _init_pdf(fonts_available):
     if fonts_available:
         try:
-            pdf = BED SOLUTIONReportPDF("DejaVu")
+            pdf = BEDSOLUTIONReportPDF("DejaVu")
             pdf.add_font("DejaVu", "", "DejaVuSans.ttf")
             pdf.add_font("DejaVu", "B", "DejaVuSans-Bold.ttf")
             return pdf
         except Exception:
             pass
-    return BED SOLUTIONReportPDF("Helvetica")
+    return BEDSOLUTIONReportPDF("Helvetica")
 
 def _draw_report_header(pdf, f_name, title, subtitle):
     NAVY, GOLD = (31, 56, 100), (212, 175, 55)
