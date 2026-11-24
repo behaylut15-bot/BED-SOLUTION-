@@ -26,6 +26,16 @@ _REQ_HDRS = [
     "Material_ID", "Material_Name", "Requested_Qty", "Est_Unit_Cost", "Status", "Notes"
 ]
 
+_ASSET_HEADERS = [
+    "Date", "Asset_Type", "Asset_Name", "Movement",
+    "Qty", "Value_ETB", "Employee", "Condition", "Notes"
+]
+
+_DMG_EXP_HEADERS = [
+    "Date", "Asset_Type", "Asset_Name",
+    "Qty", "Damage_Expense_ETB", "Employee", "Notes"
+]
+
 # --- AUTO-DOWNLOAD FONTS ---
 font_ready = False
 try:
@@ -1391,7 +1401,7 @@ if authenticate():
     # ROLE-BASED TAB VISIBILITY
     # =====================================================================
     ALL_TABS = [
-         ("exec", "📊 Exec Summary"),
+        ("exec", "📊 Exec Summary"),
         ("prod", "🏭 Production"),
         ("sales", "🛒 Sales & Income Statement"),
         ("inv", "📦 Inventory"),
@@ -1406,7 +1416,7 @@ if authenticate():
     if role == "manager":
         allowed_keys = [k for k, _ in ALL_TABS]
     elif role == "maker":
-        allowed_keys = ["request", "stock_audit", "inv"]
+        allowed_keys = ["request", "assets", "stock_audit", "inv"]
     elif role in ("purchaser", "approver"):
         allowed_keys = ["purch"]
     else:
@@ -1755,6 +1765,156 @@ if authenticate():
                 else:
                     st.info("No finished goods production records found.")
 
+    # --- TAB: ASSETS & MACHINERY ---
+    if "assets" in tab_map:
+        with tab_map["assets"]:
+            st.markdown("### 🛠️ Assets & Machinery Command")
+            st.caption("Track machinery and fixed asset movements (`In` / `Out`), damage expenses, and purchase requests.")
+
+            emp_choices = []
+            try:
+                sh_emp = _get_sheets_global()
+                ws_emp = sh_emp.worksheet("Employees")
+                emp_recs = _get_all_records_robust(ws_emp)
+                emp_choices = sorted({
+                    str(r.get("Employee_Name", "")).strip()
+                    for r in emp_recs
+                    if str(r.get("Employee_Name", "")).strip()
+                })
+            except Exception:
+                emp_choices = []
+
+            if user_name and user_name not in emp_choices:
+                emp_choices = [user_name] + emp_choices
+            if not emp_choices:
+                emp_choices = [user_name or "Employee"]
+
+            asset_ws = None
+            dmg_ws = None
+            asset_recs, dmg_recs = [], []
+            try:
+                asset_ws = _ensure_sheet("Fixed_Assets_Log", _ASSET_HEADERS)
+                dmg_ws = _ensure_sheet("Asset_Damage_Expenses", _DMG_EXP_HEADERS)
+                asset_recs = _get_all_records_robust(asset_ws)
+                dmg_recs = _get_all_records_robust(dmg_ws)
+            except Exception as e:
+                st.error(f"Could not load Assets & Machinery sheets: {e}")
+
+            with st.form("bed_asset_movement_form", clear_on_submit=True):
+                c1, c2, c3, c4 = st.columns(4)
+                a_type = c1.selectbox("Category:", ["Machinery", "Fixed Asset"])
+                a_name = c2.text_input("Asset / Machinery Name:", placeholder="e.g. Industrial Sewing Machine")
+                a_move = c3.selectbox("Movement:", ["In", "Out"])
+                a_cond = c4.selectbox("Condition:", ["Good", "Damaged"])
+
+                c5, c6, c7 = st.columns(3)
+                a_qty = c5.number_input("Quantity:", min_value=0.0, value=1.0, step=1.0)
+                a_val = c6.number_input("Value (ETB):", min_value=0.0, value=0.0, step=100.0)
+                a_emp = c7.selectbox("Employee:", emp_choices)
+
+                a_notes = st.text_input("Notes / Damage Details:", placeholder="Optional notes or reason if damaged")
+                save_asset = st.form_submit_button("💾 Record Asset Movement", type="primary", use_container_width=True)
+
+            if save_asset:
+                if not a_name.strip():
+                    st.error("Please enter an Asset / Machinery Name.")
+                elif a_qty <= 0:
+                    st.error("Quantity must be greater than 0.")
+                elif asset_ws is None or dmg_ws is None:
+                    st.error("Sheets are not available right now.")
+                else:
+                    try:
+                        now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        clean_q = float(a_qty)
+                        clean_v = float(a_val)
+                        asset_ws.append_row([
+                            now_str, a_type, a_name.strip(), a_move,
+                            clean_q, clean_v, a_emp, a_cond, a_notes.strip()
+                        ], value_input_option="USER_ENTERED")
+
+                        if a_cond == "Damaged":
+                            dmg_ws.append_row([
+                                now_str, a_type, a_name.strip(),
+                                clean_q, clean_v, a_emp, a_notes.strip() or f"Damaged during {a_move}"
+                            ], value_input_option="USER_ENTERED")
+                            st.warning(f"⚠️ Registered damage expense of ETB {clean_v:,.2f} for '{a_name.strip()}'.")
+                        else:
+                            st.success(f"✅ Recorded {a_move} ({clean_q:,.0f}) for '{a_name.strip()}' by {a_emp}.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Failed to save asset record: {e}")
+
+            st.divider()
+            st.markdown("#### 📤 Request Purchase for Asset / Machinery")
+            with st.form("bed_asset_to_pr_form", clear_on_submit=True):
+                p1, p2, p3, p4 = st.columns(4)
+                pr_a_name = p1.text_input("Asset / Machinery to Buy:", placeholder="e.g. Foam Cutting Machine")
+                pr_a_qty = p2.number_input("Qty:", min_value=1.0, value=1.0, step=1.0)
+                pr_a_cost = p3.number_input("Est. Unit Cost (ETB):", min_value=0.0, value=0.0, step=100.0)
+                pr_a_sup = p4.text_input("Preferred Supplier (Optional):", "")
+                pr_a_notes = st.text_input("Purchase Request Notes:", placeholder="e.g. Needed for bed production")
+                send_asset_req = st.form_submit_button("📤 Send to Purchase Requests", type="primary", use_container_width=True)
+
+            if send_asset_req:
+                if not pr_a_name.strip():
+                    st.error("Please enter an Asset / Machinery name to request.")
+                else:
+                    try:
+                        req_ws_a = _ensure_sheet("Purchase_Requests", _REQ_HDRS)
+                        rid_a = f"REQ-{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
+                        clean_aid = "ASSET-" + "".join(ch if ch.isalnum() else "_" for ch in pr_a_name.strip().upper())[:20]
+                        req_ws_a.append_row([
+                            rid_a,
+                            datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            user_name,
+                            pr_a_sup.strip(),
+                            clean_aid,
+                            pr_a_name.strip(),
+                            float(pr_a_qty),
+                            float(pr_a_cost),
+                            "Pending",
+                            pr_a_notes.strip()
+                        ], value_input_option="USER_ENTERED")
+                        st.success(f"✅ Sent purchase request {rid_a} for '{pr_a_name.strip()}' to Purchase Requests.")
+                    except Exception as e:
+                        st.error(f"Could not send purchase request: {e}")
+
+            df_assets = pd.DataFrame(asset_recs) if asset_recs else pd.DataFrame(columns=_ASSET_HEADERS)
+            df_dmg = pd.DataFrame(dmg_recs) if dmg_recs else pd.DataFrame(columns=_DMG_EXP_HEADERS)
+
+            for col in _ASSET_HEADERS:
+                if col not in df_assets.columns:
+                    df_assets[col] = ""
+            for col in _DMG_EXP_HEADERS:
+                if col not in df_dmg.columns:
+                    df_dmg[col] = ""
+
+            if not df_assets.empty:
+                df_assets["Val_Num"] = clean_numeric_col(df_assets["Value_ETB"], 0.0)
+                in_val = float(df_assets[df_assets["Movement"].astype(str).str.strip().str.lower() == "in"]["Val_Num"].sum())
+                out_val = float(df_assets[df_assets["Movement"].astype(str).str.strip().str.lower() == "out"]["Val_Num"].sum())
+            else:
+                in_val = out_val = 0.0
+
+            dmg_exp_total = float(clean_numeric_col(df_dmg["Damage_Expense_ETB"], 0.0).sum()) if not df_dmg.empty else 0.0
+
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Assets / Machinery In Value", f"ETB {in_val:,.2f}")
+            m2.metric("Assets / Machinery Out Value", f"ETB {out_val:,.2f}")
+            m3.metric("Total Damage Expenses", f"ETB {dmg_exp_total:,.2f}")
+
+            st.markdown("#### 📋 Asset & Machinery In / Out Log")
+            if not df_assets.empty:
+                st.dataframe(df_assets[_ASSET_HEADERS], use_container_width=True, hide_index=True)
+            else:
+                st.info("No asset/machinery movements recorded yet.")
+
+            st.markdown("#### 🔥 Damaged Asset Expenses")
+            if not df_dmg.empty:
+                st.dataframe(df_dmg[_DMG_EXP_HEADERS], use_container_width=True, hide_index=True)
+            else:
+                st.info("No damaged asset expenses registered.")
+
     # --- TAB: SUPPLIERS ---
     if "sup" in tab_map:
         with tab_map["sup"]:
@@ -2011,7 +2171,7 @@ if authenticate():
     if "request" in tab_map:
         with tab_map["request"]:
             st.markdown("### 📝 Purchase Request Workspace")
-            st.caption(f"Signed in as **{user_name}** • Build and submit material purchase requests.")
+            st.caption(f"Signed in as **{user_name}** • Build and submit material or asset purchase requests.")
 
             try:
                 _req_ws_view = _ensure_sheet("Purchase_Requests", _REQ_HDRS)
