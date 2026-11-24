@@ -11,8 +11,14 @@ from fpdf import FPDF
 from kenat import Kenat
 import os
 import urllib.request
+from collections import defaultdict
 
-st.set_page_config(page_title="BED SOLUTION Dashboard", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(
+    page_title="BED SOLUTION | Executive Command",
+    page_icon="🛋️",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
 # --- CONSTANTS & HEADERS ---
 _REQ_HDRS = [
@@ -30,50 +36,204 @@ try:
 except Exception:
     font_ready = False
 
-# --- CUSTOM CSS ---
+# --- REFINED EDITORIAL & EXECUTIVE INTERFACE CSS ---
 st.markdown("""
     <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap');
+
+    html, body, [class*="css"] {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+
+    .stApp {
+        background: radial-gradient(circle at 15% 10%, rgba(31, 56, 100, 0.22) 0%, rgba(11, 13, 18, 1) 52%);
+    }
+
+    /* Executive Top Banner */
+    .exec-banner {
+        background: linear-gradient(125deg, #121826 0%, #192844 55%, #11151f 100%);
+        border: 1px solid rgba(212, 175, 55, 0.28);
+        border-radius: 16px;
+        padding: 26px 32px;
+        margin-bottom: 22px;
+        box-shadow: 0 14px 34px rgba(0, 0, 0, 0.45);
+        position: relative;
+        overflow: hidden;
+    }
+    .exec-banner::before {
+        content: "";
+        position: absolute;
+        top: 0; left: 0; right: 0;
+        height: 3px;
+        background: linear-gradient(90deg, #D4AF37, #F3D26A, #1f3864);
+    }
+    .exec-kicker {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 2.4px;
+        text-transform: uppercase;
+        color: #E5C158;
+        margin-bottom: 6px;
+    }
     .golden-title {
-        font-family: 'Arial', sans-serif; font-size: clamp(50px, 10vw, 120px) !important;
-        font-weight: 900 !important; color: #D4AF37 !important; text-shadow: 3px 3px 8px rgba(0,0,0,0.8);
-        text-align: center; margin-top: 0px; margin-bottom: 0px; padding-bottom: 0px; line-height: 1.1;
+        font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
+        font-size: clamp(32px, 5vw, 56px) !important;
+        font-weight: 800 !important;
+        background: linear-gradient(135deg, #F7E199 0%, #D4AF37 55%, #B08A1E 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin: 0 !important;
+        padding: 0 !important;
+        line-height: 1.08 !important;
+        letter-spacing: -0.02em;
     }
     .sub-title {
-        color: #A0A0A0; font-size: clamp(14px, 2vw, 24px); text-align: center; letter-spacing: 3px;
-        margin-top: 10px; margin-bottom: 30px; font-weight: bold;
+        color: #9AA6BC;
+        font-size: clamp(12px, 1.4vw, 15px);
+        letter-spacing: 2.2px;
+        text-transform: uppercase;
+        margin-top: 6px;
+        margin-bottom: 0;
+        font-weight: 600;
     }
+
+    /* Metric Cards */
     .stMetric {
-        background: linear-gradient(135deg, #1f3864 0%, #111111 100%);
-        padding: 15px; border-radius: 10px; color: white;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.3); border-left: 5px solid #D4AF37;
-        min-width: 0;
+        background: linear-gradient(145deg, rgba(24, 34, 54, 0.92) 0%, rgba(15, 19, 29, 0.96) 100%);
+        padding: 18px 20px;
+        border-radius: 14px;
+        border: 1px solid rgba(255, 255, 255, 0.07);
+        border-top: 3px solid #D4AF37;
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
+        transition: transform 0.16s ease, border-color 0.16s ease;
     }
-    .stMetric label { color: #E0E0E0 !important; font-size: 14px; font-weight: 600; white-space: normal; }
-    .stMetric [data-testid="stMetricValue"] { color: #FFFFFF !important; font-size: 22px; font-weight: bold; }
+    .stMetric:hover {
+        transform: translateY(-2px);
+        border-color: rgba(212, 175, 55, 0.45);
+    }
+    .stMetric label {
+        color: #9AA6BC !important;
+        font-size: 12px !important;
+        font-weight: 600 !important;
+        letter-spacing: 0.4px;
+        text-transform: uppercase;
+    }
+    .stMetric [data-testid="stMetricValue"] {
+        color: #F8FAFC !important;
+        font-size: 24px !important;
+        font-weight: 700 !important;
+        letter-spacing: -0.01em;
+    }
 
-    div[data-testid="stExpander"] { border: 1px solid #333; border-radius: 8px; }
+    /* Section Headers */
+    .section-card {
+        background: rgba(18, 23, 35, 0.78);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        border-radius: 12px;
+        padding: 16px 20px;
+        margin-bottom: 16px;
+    }
 
-    /* FORCE TABS TO WRAP */
+    /* Expanders & Dataframes */
+    div[data-testid="stExpander"] {
+        background: rgba(17, 22, 33, 0.85);
+        border: 1px solid rgba(212, 175, 55, 0.2);
+        border-radius: 12px;
+        margin-bottom: 12px;
+    }
+    div[data-testid="stDataFrame"] {
+        border-radius: 10px;
+        overflow: hidden;
+        border: 1px solid rgba(255, 255, 255, 0.07);
+    }
+
+    /* Wrapping Tabs */
     div[data-baseweb="tab-list"] {
         display: flex !important;
         flex-wrap: wrap !important;
-        overflow-x: visible !important;
-        gap: 10px !important;
+        gap: 8px !important;
+        background: rgba(15, 19, 29, 0.75);
+        padding: 8px;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        margin-bottom: 16px;
     }
     .stTabs [data-baseweb="tab"] {
         height: auto !important;
-        white-space: normal !important;
+        white-space: nowrap !important;
         background-color: transparent !important;
-        border-radius: 4px 4px 0px 0px !important;
-        padding: 10px 15px !important;
+        color: #A7B3C7 !important;
+        border-radius: 8px !important;
+        padding: 8px 14px !important;
+        font-size: 13px !important;
+        font-weight: 600 !important;
     }
-    .stTabs [aria-selected="true"] { background-color: #1f3864 !important; color: #D4AF37 !important; font-weight: bold; }
+    .stTabs [data-baseweb="tab"]:hover {
+        background-color: rgba(255, 255, 255, 0.05) !important;
+        color: #FFFFFF !important;
+    }
+    .stTabs [aria-selected="true"] {
+        background: linear-gradient(135deg, #1F3864 0%, #294982 100%) !important;
+        color: #F5D77F !important;
+        font-weight: 700 !important;
+        box-shadow: 0 4px 12px rgba(31, 56, 100, 0.45);
+    }
 
-    .info-box { background-color: #e6f2ff; color: #003366; padding: 10px; border-radius: 5px; border-left: 5px solid #003366; margin-bottom: 15px; font-size: 14px; }
-    .warn-box { background-color: #ffcccc; color: #990000; padding: 15px; border-radius: 5px; border-left: 5px solid #990000; margin-bottom: 20px; font-weight: bold; }
-    .health-ok { background-color: #e6f7ed; color: #14532d; padding: 12px; border-radius: 5px; border-left: 5px solid #16a34a; margin-bottom: 15px; font-size: 14px; }
-    .user-badge { background: #1f3864; color: #D4AF37; padding: 10px; border-radius: 8px; text-align: center; font-weight: bold; margin-bottom: 10px; border: 1px solid #D4AF37; }
-    .purchaser-card { background: #1a1a1a; padding: 12px; border-radius: 8px; border: 1px solid #333; margin-bottom: 10px; }
+    /* Status & Callout Boxes */
+    .info-box {
+        background: rgba(31, 56, 100, 0.24);
+        color: #DCE8FF;
+        padding: 14px 16px;
+        border-radius: 10px;
+        border-left: 4px solid #4F8BF9;
+        margin-bottom: 14px;
+        font-size: 13.5px;
+    }
+    .warn-box {
+        background: rgba(153, 27, 27, 0.22);
+        color: #FECACA;
+        padding: 14px 16px;
+        border-radius: 10px;
+        border-left: 4px solid #EF4444;
+        margin-bottom: 16px;
+        font-size: 13.5px;
+    }
+    .health-ok {
+        background: rgba(20, 83, 45, 0.26);
+        color: #BBF7D0;
+        padding: 12px 16px;
+        border-radius: 10px;
+        border-left: 4px solid #22C55E;
+        margin-bottom: 16px;
+        font-size: 13.5px;
+        font-weight: 500;
+    }
+    .user-badge {
+        background: linear-gradient(135deg, #1A2E52 0%, #111927 100%);
+        color: #F3D26A;
+        padding: 14px;
+        border-radius: 12px;
+        text-align: center;
+        font-weight: 700;
+        margin-bottom: 12px;
+        border: 1px solid rgba(212, 175, 55, 0.35);
+    }
+    .purchaser-card {
+        background: rgba(20, 26, 38, 0.9);
+        padding: 14px 16px;
+        border-radius: 10px;
+        border: 1px solid rgba(212, 175, 55, 0.22);
+        margin-bottom: 10px;
+    }
+    .login-shell {
+        max-width: 480px;
+        margin: 36px auto;
+        background: rgba(17, 22, 34, 0.92);
+        border: 1px solid rgba(212, 175, 55, 0.28);
+        border-radius: 16px;
+        padding: 28px;
+        box-shadow: 0 20px 45px rgba(0, 0, 0, 0.5);
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -136,6 +296,20 @@ def normalize_payment_type(val):
     s = str(val or "").strip().title()
     return "Credit" if s == "Credit" else "Cash"
 
+def style_plotly_chart(fig, height=360):
+    fig.update_layout(
+        template="plotly_dark",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(16, 22, 34, 0.55)",
+        font=dict(family="Inter, sans-serif", color="#E2E8F0", size=12),
+        height=height,
+        margin=dict(l=16, r=16, t=42, b=16),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+    fig.update_xaxes(showgrid=False, linecolor="rgba(255,255,255,0.12)")
+    fig.update_yaxes(gridcolor="rgba(255,255,255,0.08)", linecolor="rgba(255,255,255,0.12)")
+    return fig
+
 def get_google_creds():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     try:
@@ -151,7 +325,8 @@ def get_google_creds():
 
 def _get_sheets_global():
     creds = get_google_creds()
-    return gspread.authorize(creds).open_by_url(str(st.secrets.get("BED SOLUTION_url", "")).strip())
+    sheet_url = str(st.secrets.get("BED SOLUTION_url") or st.secrets.get("BED_SOLUTION_url") or "").strip()
+    return gspread.authorize(creds).open_by_url(sheet_url)
 
 def _ensure_sheet(ws_name, headers):
     sh = _get_sheets_global()
@@ -254,7 +429,7 @@ def _draw_report_header(pdf, f_name, title, subtitle):
         except Exception:
             text_x = 10
 
-    brand_name = "BED SOLUTION BED SOLUTION" if f_name == "DejaVu" else "BED SOLUTION"
+    brand_name = "BED SOLUTION"
 
     pdf.set_xy(text_x, 5); pdf.set_font(f_name, "B", 16); pdf.set_text_color(*GOLD)
     pdf.cell(0, 8, brand_name, ln=True, align="L")
@@ -686,7 +861,10 @@ def authenticate():
     if "user" in st.session_state:
         return True
 
-    st.markdown("## 🔒 BED SOLUTION — Sign In")
+    st.markdown('<div class="login-shell">', unsafe_allow_html=True)
+    st.markdown('<div class="exec-kicker">BED SOLUTION OPERATIONS</div>', unsafe_allow_html=True)
+    st.markdown("### 🔒 Workspace Sign In")
+    st.caption("Select your assigned workspace profile to continue.")
 
     users_secrets = None
     try:
@@ -697,12 +875,13 @@ def authenticate():
 
     if not users_secrets:
         pwd = st.text_input("Master Password", type="password", key="legacy_pwd")
-        if st.button("Login", type="primary"):
+        if st.button("Login", type="primary", use_container_width=True):
             if pwd == st.secrets.get("app_password", "SOFA2026"):
                 st.session_state.user = {"username": "manager", "name": "Manager", "role": "manager"}
                 st.rerun()
             else:
                 st.error("❌ Wrong password")
+        st.markdown('</div>', unsafe_allow_html=True)
         return False
 
     user_options = {}
@@ -713,7 +892,9 @@ def authenticate():
     with st.form("login_form", clear_on_submit=True):
         selected_display = st.selectbox("Select Your Profile:", list(user_options.keys()))
         password = st.text_input("Password", type="password")
-        submitted = st.form_submit_button("Login", type="primary", use_container_width=True)
+        submitted = st.form_submit_button("Sign In", type="primary", use_container_width=True)
+
+    st.markdown('</div>', unsafe_allow_html=True)
 
     if submitted:
         uname = user_options[selected_display]
@@ -736,7 +917,7 @@ def color_negative_red(val):
         return ""
     try:
         if float(val) < 0:
-            return "color: #FF4B4B; font-weight: bold;"
+            return "color: #FF6B6B; font-weight: 700;"
         return ""
     except Exception:
         return ""
@@ -749,20 +930,7 @@ if authenticate():
     role = str(user.get("role", "")).strip().lower()
     user_name = user.get("name", user.get("username", "Guest"))
 
-    with st.sidebar:
-        st.markdown(f'<div class="user-badge">👤 {user_name}<br><span style="font-size:12px;">{role.upper()}</span></div>', unsafe_allow_html=True)
-        if st.button("🚪 Logout", use_container_width=True):
-            del st.session_state.user
-            st.rerun()
-        if st.button("🔄 Refresh Data", use_container_width=True):
-            st.cache_data.clear()
-            st.rerun()
-
-    st.markdown('<p class="golden-title">BED SOLUTION</p>', unsafe_allow_html=True)
-    st.markdown('<p class="sub-title">EXECUTIVE DASHBOARD</p>', unsafe_allow_html=True)
-
-    # --- ETHIOPIAN DATE FILTERS ---
-    st.sidebar.header("📅 Ethiopian Date Filters")
+    # --- ETHIOPIAN DATE FILTERS & SIDEBAR CONTROLS ---
     eth_months = [
         "Meskerem", "Tikimt", "Hidar", "Tahsas", "Tir", "Yekatit",
         "Megabit", "Miazia", "Ginbot", "Sene", "Hamle", "Nehase", "Pagume"
@@ -778,51 +946,80 @@ if authenticate():
         except Exception:
             return pd.NaT
 
-    filter_option = st.sidebar.radio(
-        "Select Range:",
-        ["All Time", "This Month (EC)", "Last Month (EC)", "This Year (EC)", "Custom Range (EC)"]
-    )
+    with st.sidebar:
+        st.markdown(
+            f'<div class="user-badge">👤 {user_name}<br><span style="font-size:11px; letter-spacing:1.4px; opacity:0.85;">{role.upper()}</span></div>',
+            unsafe_allow_html=True
+        )
+        b_col1, b_col2 = st.columns(2)
+        if b_col1.button("🔄 Refresh", use_container_width=True):
+            st.cache_data.clear()
+            st.rerun()
+        if b_col2.button("🚪 Logout", use_container_width=True):
+            del st.session_state.user
+            st.rerun()
 
-    if filter_option == "This Month (EC)":
-        start_date = get_greg_date(curr_eth_year, curr_eth_month, 1)
-        end_date = pd.to_datetime(datetime.date.today())
-        st.sidebar.info(f"Filtering: {eth_months[curr_eth_month - 1]} {curr_eth_year} EC")
-    elif filter_option == "Last Month (EC)":
-        prev_y, prev_m = (curr_eth_year - 1, 13) if curr_eth_month == 1 else (curr_eth_year, curr_eth_month - 1)
-        start_date = get_greg_date(prev_y, prev_m, 1)
-        curr_start_greg = get_greg_date(curr_eth_year, curr_eth_month, 1)
-        end_date = curr_start_greg - datetime.timedelta(days=1)
-        st.sidebar.info(f"Filtering: {eth_months[prev_m - 1]} {prev_y} EC")
-    elif filter_option == "This Year (EC)":
-        start_date = get_greg_date(curr_eth_year, 1, 1)
-        end_date = pd.to_datetime(datetime.date.today())
-        st.sidebar.info(f"Filtering: Year {curr_eth_year} EC")
-    elif filter_option == "Custom Range (EC)":
-        st.sidebar.write("**From**")
-        c1, c2, c3 = st.sidebar.columns(3)
-        start_y = c1.selectbox("Year", range(curr_eth_year - 5, curr_eth_year + 2), index=5, key="sy")
-        start_m = c2.selectbox("Month", range(1, 14), index=curr_eth_month - 1, format_func=lambda x: eth_months[x - 1], key="sm")
-        start_d = c3.selectbox("Day", range(1, 31), index=0, key="sd")
-        st.sidebar.write("**To**")
-        c4, c5, c6 = st.sidebar.columns(3)
-        end_y = c4.selectbox("Year", range(curr_eth_year - 5, curr_eth_year + 2), index=5, key="ey")
-        end_m = c5.selectbox("Month", range(1, 14), index=curr_eth_month - 1, format_func=lambda x: eth_months[x - 1], key="em")
-        end_d = c6.selectbox("Day", range(1, 31), index=max(0, curr_eth_day - 1), key="ed")
-        start_date = get_greg_date(start_y, start_m, start_d)
-        end_date = get_greg_date(end_y, end_m, end_d)
-    else:
-        start_date = pd.to_datetime("2000-01-01")
-        end_date = pd.to_datetime("2100-01-01")
-        st.sidebar.info("Showing All Time Data")
+        st.divider()
+        st.markdown("### 📅 Ethiopian Date Window")
+        filter_option = st.radio(
+            "Select Range:",
+            ["All Time", "This Month (EC)", "Last Month (EC)", "This Year (EC)", "Custom Range (EC)"]
+        )
+
+        if filter_option == "This Month (EC)":
+            start_date = get_greg_date(curr_eth_year, curr_eth_month, 1)
+            end_date = pd.to_datetime(datetime.date.today())
+            filter_badge = f"{eth_months[curr_eth_month - 1]} {curr_eth_year} EC"
+            st.caption(f"Active Window: **{filter_badge}**")
+        elif filter_option == "Last Month (EC)":
+            prev_y, prev_m = (curr_eth_year - 1, 13) if curr_eth_month == 1 else (curr_eth_year, curr_eth_month - 1)
+            start_date = get_greg_date(prev_y, prev_m, 1)
+            curr_start_greg = get_greg_date(curr_eth_year, curr_eth_month, 1)
+            end_date = curr_start_greg - datetime.timedelta(days=1)
+            filter_badge = f"{eth_months[prev_m - 1]} {prev_y} EC"
+            st.caption(f"Active Window: **{filter_badge}**")
+        elif filter_option == "This Year (EC)":
+            start_date = get_greg_date(curr_eth_year, 1, 1)
+            end_date = pd.to_datetime(datetime.date.today())
+            filter_badge = f"Year {curr_eth_year} EC"
+            st.caption(f"Active Window: **{filter_badge}**")
+        elif filter_option == "Custom Range (EC)":
+            st.write("**From**")
+            c1, c2, c3 = st.columns(3)
+            start_y = c1.selectbox("Year", range(curr_eth_year - 5, curr_eth_year + 2), index=5, key="sy")
+            start_m = c2.selectbox("Month", range(1, 14), index=curr_eth_month - 1, format_func=lambda x: eth_months[x - 1], key="sm")
+            start_d = c3.selectbox("Day", range(1, 31), index=0, key="sd")
+            st.write("**To**")
+            c4, c5, c6 = st.columns(3)
+            end_y = c4.selectbox("Year", range(curr_eth_year - 5, curr_eth_year + 2), index=5, key="ey")
+            end_m = c5.selectbox("Month", range(1, 14), index=curr_eth_month - 1, format_func=lambda x: eth_months[x - 1], key="em")
+            end_d = c6.selectbox("Day", range(1, 31), index=max(0, curr_eth_day - 1), key="ed")
+            start_date = get_greg_date(start_y, start_m, start_d)
+            end_date = get_greg_date(end_y, end_m, end_d)
+            filter_badge = f"{eth_months[start_m-1]} {start_y} → {eth_months[end_m-1]} {end_y} EC"
+        else:
+            start_date = pd.to_datetime("2000-01-01")
+            end_date = pd.to_datetime("2100-01-01")
+            filter_badge = "All Time"
+            st.caption("Active Window: **All Time**")
+
+    # --- EXECUTIVE HEADER BANNER ---
+    st.markdown(f"""
+        <div class="exec-banner">
+            <div class="exec-kicker">SOFA MANUFACTURING &amp; INVENTORY INTELLIGENCE &bull; {filter_badge.upper()}</div>
+            <p class="golden-title">BED SOLUTION</p>
+            <p class="sub-title">Executive Operations &amp; Financial Command</p>
+        </div>
+    """, unsafe_allow_html=True)
 
     if pd.isna(start_date):
         start_date = pd.to_datetime("2000-01-01")
     if pd.isna(end_date):
         end_date = pd.to_datetime("2100-01-01")
 
-    @st.cache_data(ttl=300, show_spinner="Loading BED SOLUTION data...")
+    @st.cache_data(ttl=300, show_spinner="Syncing BED SOLUTION ledger...")
     def load_data():
-        url = str(st.secrets.get("BED SOLUTION_url", "")).strip()
+        url = str(st.secrets.get("BED SOLUTION_url") or st.secrets.get("BED_SOLUTION_url") or "").strip()
         if not url:
             st.error("❌ Missing 'BED SOLUTION_url' in Streamlit Secrets.")
             st.stop()
@@ -1229,44 +1426,45 @@ if authenticate():
             total_payables = sum(v for v in supplier_balances.values() if v > 0)
             inv_value = sum(float(row["Qty"]) * float(row["Unit_Cost"]) for _, row in df_layers.iterrows() if float(row["Qty"]) > 0) if not df_layers.empty else 0.0
 
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Revenue", f"ETB {total_rev:,.2f}")
-            c2.metric("True COGS (Inc. Overhead)", f"ETB {total_cogs:,.2f}")
-            c3.metric("Gross Profit", f"ETB {total_profit:,.2f}", delta=f"{margin:.1f}% Margin")
+            c1, c2, c3, c4, c5 = st.columns(5)
+            c1.metric("Revenue", f"ETB {total_rev:,.0f}")
+            c2.metric("True COGS", f"ETB {total_cogs:,.0f}")
+            c3.metric("Gross Profit", f"ETB {total_profit:,.0f}", delta=f"{margin:.1f}% Margin")
+            c4.metric("Inventory Value", f"ETB {inv_value:,.0f}")
+            c5.metric("Open Payables", f"ETB {total_payables:,.0f}")
 
-            c4, c5 = st.columns(2)
-            c4.metric("Inventory Value", f"ETB {inv_value:,.2f}")
-            c5.metric("Total Debt", f"ETB {total_payables:,.2f}")
-
-            st.divider()
+            st.markdown("")
             c_left, c_right = st.columns(2)
             with c_left:
-                st.subheader("Top Selling Models")
+                st.markdown("#### Top Selling Sofa Models")
                 if not df_sales_filt.empty and "Model_Name" in df_sales_filt.columns:
                     top_models = df_sales_filt.groupby("Model_Name")["Qty_Sold"].sum().reset_index().sort_values(by="Qty_Sold", ascending=False).head(5)
-                    fig = px.bar(top_models, x="Model_Name", y="Qty_Sold", color="Qty_Sold", color_continuous_scale="Teal")
-                    st.plotly_chart(fig, use_container_width=True)
+                    fig = px.bar(
+                        top_models, x="Model_Name", y="Qty_Sold",
+                        color="Qty_Sold", color_continuous_scale=["#1F3864", "#4A89DC", "#D4AF37"]
+                    )
+                    st.plotly_chart(style_plotly_chart(fig), use_container_width=True)
                 else:
                     st.info("No sales volume data for this period.")
             with c_right:
-                st.subheader("Production vs Sales Volume")
+                st.markdown("#### Production vs. Sales Volume")
                 if not df_prod_filt.empty and not df_sales_filt.empty:
                     prod_vol = df_prod_filt.groupby("Model_Name")["Qty_Produced"].sum().reset_index()
                     sold_vol = df_sales_filt.groupby("Model_Name")["Qty_Sold"].sum().reset_index()
                     merged = pd.merge(prod_vol, sold_vol, on="Model_Name", how="outer").fillna(0)
                     fig = go.Figure(data=[
-                        go.Bar(name="Produced", x=merged["Model_Name"], y=merged["Qty_Produced"], marker_color="#1f77b4"),
+                        go.Bar(name="Produced", x=merged["Model_Name"], y=merged["Qty_Produced"], marker_color="#4A89DC"),
                         go.Bar(name="Sold", x=merged["Model_Name"], y=merged["Qty_Sold"], marker_color="#D4AF37")
                     ])
                     fig.update_layout(barmode="group")
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(style_plotly_chart(fig), use_container_width=True)
                 else:
                     st.info("Need both production and sales records in this range to compare.")
 
     # --- TAB: PRODUCTION ---
     if "prod" in tab_map:
         with tab_map["prod"]:
-            st.subheader("Production Performance")
+            st.markdown("### 🏭 Production Performance & Batch Costing")
             if not df_prod_filt.empty:
                 zero_cost_batches = df_prod_filt[df_prod_filt["Direct_Mat_Cost"] == 0]["Batch_ID"].unique()
                 if len(zero_cost_batches) > 0:
@@ -1284,7 +1482,13 @@ if authenticate():
                         "Date (EC)", "Batch_ID", "Model_Name", "Qty_Produced",
                         "Status", "Direct_Mat_Cost", "Absorbed_Overhead_Cost",
                         "Total_True_Cost", "True_Unit_Cost"
-                    ]],
+                    ]].style.format({
+                        "Qty_Produced": "{:,.0f}",
+                        "Direct_Mat_Cost": "ETB {:,.2f}",
+                        "Absorbed_Overhead_Cost": "ETB {:,.2f}",
+                        "Total_True_Cost": "ETB {:,.2f}",
+                        "True_Unit_Cost": "ETB {:,.2f}"
+                    }),
                     use_container_width=True,
                     hide_index=True
                 )
@@ -1301,13 +1505,19 @@ if authenticate():
                         df_batch_details["Material_Name"] = df_batch_details["Material_Name"].fillna(df_batch_details["Material_ID"])
 
                     batch_options = df_prod_filt["Batch_ID"].unique().tolist()
-                    selected_batch = st.selectbox("Select a Batch to view its material details:", batch_options)
+                    selected_batch = st.selectbox("Inspect Batch Material Breakdown:", batch_options)
 
                     if selected_batch:
                         df_selected = df_batch_details[df_batch_details["Batch_ID"] == selected_batch].copy()
                         if not df_selected.empty:
                             df_selected["Date (EC)"] = df_selected["Date"].apply(to_ethiopian)
-                            st.dataframe(df_selected[["Date (EC)", "Material_Name", "Qty", "Cost"]], use_container_width=True, hide_index=True)
+                            st.dataframe(
+                                df_selected[["Date (EC)", "Material_Name", "Qty", "Cost"]].style.format({
+                                    "Qty": "{:,.0f}", "Cost": "ETB {:,.2f}"
+                                }),
+                                use_container_width=True,
+                                hide_index=True
+                            )
 
                             b_slice = df_prod_filt[df_prod_filt["Batch_ID"] == selected_batch]
                             batch_overhead = b_slice["Absorbed_Overhead_Cost"].sum()
@@ -1348,11 +1558,11 @@ if authenticate():
                     .sort_values(["Eth_Year", "Eth_Month"], ascending=False)
                 )
 
-                for _, row in monthly.iterrows():
+                for idx_m, row in monthly.iterrows():
                     m_name = get_eth_month_label(row["Eth_Year"], row["Eth_Month"])
                     with st.expander(
-                        f"📅 {m_name} | Revenue: ETB {row['Total_Sale_Price']:,.0f} | Profit: ETB {row['Gross_Profit']:,.0f}",
-                        expanded=True
+                        f"📅 {m_name}  •  Revenue: ETB {row['Total_Sale_Price']:,.0f}  •  Gross Profit: ETB {row['Gross_Profit']:,.0f}",
+                        expanded=(idx_m == 0)
                     ):
                         df_m = df_sales_filt[(df_sales_filt["Eth_Year"] == row["Eth_Year"]) & (df_sales_filt["Eth_Month"] == row["Eth_Month"])]
                         df_m_calc = df_m.copy()
@@ -1383,7 +1593,7 @@ if authenticate():
 
                         st.markdown(f"""
                         <div class="info-box">
-                        <b>How Workshop Overhead was calculated for this month:</b><br>
+                        <b>Workshop Overhead Allocation Formula:</b><br>
                         Total Month Workshop Consumables ÷ Total Month Production = Overhead per Sofa<br>
                         <b>ETB {month_consumable:,.2f}</b> ÷ <b>{month_produced:,.0f} sofas</b> = <b>ETB {month_oh_per_sofa:,.2f} per sofa</b>
                         </div>
@@ -1403,14 +1613,20 @@ if authenticate():
                                         )
                                     else:
                                         df_ws_month["Material_Name"] = df_ws_month["Material_ID"]
-                                    st.dataframe(df_ws_month[["Material_ID", "Material_Name", "Qty", "Cost"]], use_container_width=True, hide_index=True)
+                                    st.dataframe(
+                                        df_ws_month[["Material_ID", "Material_Name", "Qty", "Cost"]].style.format({
+                                            "Qty": "{:,.0f}", "Cost": "ETB {:,.2f}"
+                                        }),
+                                        use_container_width=True,
+                                        hide_index=True
+                                    )
                                 else:
                                     st.write("No workshop consumables for this month.")
                             else:
                                 st.write("No workshop consumables recorded.")
 
                         margin_pct = safe_div(row["Gross_Profit"] * 100.0, row["Total_Sale_Price"], 0.0)
-                        st.write("**Profit & Loss Summary:**")
+                        st.markdown("**Profit & Loss Summary:**")
                         st.markdown(f"""
 | Line Item | Amount (ETB) |
 |---|---:|
@@ -1430,14 +1646,25 @@ if authenticate():
                         model_summary["Margin %"] = model_summary.apply(
                             lambda r: safe_div(r["Profit"] * 100.0, r["Revenue"], 0.0), axis=1
                         )
-                        st.dataframe(model_summary[["Model_Name", "Qty_Sold", "Revenue", "COGS", "Profit", "Margin %"]], use_container_width=True, hide_index=True)
+                        st.dataframe(
+                            model_summary[["Model_Name", "Qty_Sold", "Revenue", "COGS", "Profit", "Margin %"]].style.format({
+                                "Qty_Sold": "{:,.0f}", "Revenue": "ETB {:,.2f}", "COGS": "ETB {:,.2f}",
+                                "Profit": "ETB {:,.2f}", "Margin %": "{:.1f}%"
+                            }),
+                            use_container_width=True,
+                            hide_index=True
+                        )
 
                         df_m_calc["Date (EC)"] = df_m_calc["Date"].apply(to_ethiopian)
                         st.dataframe(
                             df_m_calc[[
                                 "Date (EC)", "Client_Name", "Model_Name", "Qty_Sold",
                                 "Total_Sale_Price", "Direct_Unit_Cost", "Overhead_Unit_Cost", "COGS", "Gross_Profit"
-                            ]],
+                            ]].style.format({
+                                "Qty_Sold": "{:,.0f}", "Total_Sale_Price": "ETB {:,.2f}",
+                                "Direct_Unit_Cost": "ETB {:,.2f}", "Overhead_Unit_Cost": "ETB {:,.2f}",
+                                "COGS": "ETB {:,.2f}", "Gross_Profit": "ETB {:,.2f}"
+                            }),
                             use_container_width=True,
                             hide_index=True
                         )
@@ -1479,7 +1706,7 @@ if authenticate():
     # --- TAB: INVENTORY ---
     if "inv" in tab_map:
         with tab_map["inv"]:
-            t1, t2 = st.tabs(["Raw Materials", "Finished Goods"])
+            t1, t2 = st.tabs(["🧱 Raw Materials", "🛋️ Finished Goods"])
             with t1:
                 if current_stock:
                     mat_lookup = dict(zip(df_mat["Material_ID"], df_mat["Material_Name"])) if not df_mat.empty else {}
@@ -1505,7 +1732,13 @@ if authenticate():
                     sold = df_sales.groupby("Model_Name")["Qty_Sold"].sum().reset_index() if (not df_sales.empty and "Model_Name" in df_sales.columns) else pd.DataFrame(columns=["Model_Name", "Qty_Sold"])
                     inv = prod.merge(sold, on="Model_Name", how="left").fillna(0)
                     inv["Remaining_Qty"] = inv["Qty_Produced"] - inv["Qty_Sold"]
-                    st.dataframe(inv[["Model_Name", "Qty_Produced", "Qty_Sold", "Remaining_Qty"]], use_container_width=True, hide_index=True)
+                    st.dataframe(
+                        inv[["Model_Name", "Qty_Produced", "Qty_Sold", "Remaining_Qty"]].style.format({
+                            "Qty_Produced": "{:,.0f}", "Qty_Sold": "{:,.0f}", "Remaining_Qty": "{:,.0f}"
+                        }),
+                        use_container_width=True,
+                        hide_index=True
+                    )
                 else:
                     st.info("No finished goods production records found.")
 
@@ -1615,7 +1848,7 @@ if authenticate():
                 c4.metric("Closing Stock", f"{tot_clo:,.0f} units", f"ETB {tot_clo_val:,.2f}")
 
                 if not df_per_mat.empty:
-                    st.write("**Per-Material Reconciliation Table:**")
+                    st.markdown("**Per-Material Reconciliation Table:**")
                     st.dataframe(
                         df_per_mat[["Material_Name", "Open_Qty", "In_Qty", "Out_Qty", "Close_Qty", "Close_Val"]]
                         .style.format({
@@ -1709,7 +1942,7 @@ if authenticate():
                 c4.metric("Closing Payable", f"ETB {clo_bal_global:,.2f}")
 
                 if not df_sup_sum.empty:
-                    st.write("**Per-Supplier Summary:**")
+                    st.markdown("**Per-Supplier Summary:**")
                     st.dataframe(
                         df_sup_sum[["Supplier_Name", "Opening_Bal", "New_Credit", "Payments", "Closing_Bal"]].style.format({
                             "Opening_Bal": "ETB {:,.2f}", "New_Credit": "ETB {:,.2f}",
@@ -1734,7 +1967,7 @@ if authenticate():
                 df_details_sup = pd.DataFrame(details_sup).sort_values(by="Date") if details_sup else pd.DataFrame(columns=["Date", "Type", "Supplier_Name", "Amount"])
                 if not df_details_sup.empty:
                     df_details_sup["Date (EC)"] = df_details_sup["Date"].apply(to_ethiopian)
-                    st.write("**Detailed Movements:**")
+                    st.markdown("**Detailed Movements:**")
                     st.dataframe(
                         df_details_sup[["Date (EC)", "Type", "Supplier_Name", "Amount"]].style.format({"Amount": "ETB {:,.2f}"}),
                         use_container_width=True,
@@ -1760,22 +1993,63 @@ if authenticate():
                 st.info("No data available.")
 
     # =====================================================================
-    # TAB: PURCHASE REQUEST
+    # TAB: PURCHASE REQUEST (MAKER)
     # =====================================================================
     if "request" in tab_map:
         with tab_map["request"]:
-            st.subheader("📝 Create Professional Purchase Request")
-            st.caption(f"👤 Signed in as **{user_name}** — this request will carry your name.")
-            st.write("Generate purchase requests for materials that are low in stock or needed for upcoming production.")
+            st.markdown("### 📝 Purchase Request Workspace")
+            st.caption(f"Signed in as **{user_name}** • Build and submit material purchase requests.")
 
             try:
                 _req_ws_view = _ensure_sheet("Purchase_Requests", _REQ_HDRS)
                 _req_data = _get_all_records_robust(_req_ws_view)
                 my_reqs = [r for r in _req_data if str(r.get("Submitted_By", "")).strip() == user_name]
                 if my_reqs:
-                    st.markdown("### 📋 My Sent Requests")
-                    df_my_reqs = pd.DataFrame(my_reqs)
-                    st.dataframe(df_my_reqs[["Request_ID", "Submitted_Date", "Material_Name", "Requested_Qty", "Status"]], use_container_width=True, hide_index=True)
+                    st.markdown("#### 📋 My Sent Requests")
+                    req_groups = defaultdict(list)
+                    for r in my_reqs:
+                        req_groups[str(r.get("Request_ID", ""))].append(r)
+
+                    for rid in sorted(req_groups.keys(), reverse=True):
+                        items_r = req_groups[rid]
+                        first_r = items_r[0]
+                        sub_dt = first_r.get("Submitted_Date", "")
+                        st_val = first_r.get("Status", "Pending")
+                        est_tot = 0.0
+                        for it_r in items_r:
+                            q_v = pd.to_numeric(str(it_r.get("Requested_Qty", 0)).replace(",", ""), errors="coerce") or 0.0
+                            c_v = pd.to_numeric(str(it_r.get("Est_Unit_Cost", 0)).replace(",", ""), errors="coerce") or 0.0
+                            est_tot += float(q_v) * float(c_v)
+
+                        with st.expander(f"📄 {rid}  •  {sub_dt}  •  {len(items_r)} item(s)  •  Est. ETB {est_tot:,.2f}  •  [{st_val}]", expanded=False):
+                            df_r_items = pd.DataFrame(items_r)
+                            cols_show = [c for c in ["Material_Name", "Requested_Qty", "Est_Unit_Cost", "Supplier_Preference", "Notes"] if c in df_r_items.columns]
+                            st.dataframe(df_r_items[cols_show], use_container_width=True, hide_index=True)
+                            sent_pdf = generate_purchase_request_pdf(
+                                req_id=rid,
+                                date_str=str(sub_dt),
+                                supplier_name=str(first_r.get("Supplier_Preference") or "General Supplier"),
+                                request_df=pd.DataFrame([
+                                    {
+                                        "Material_Name": x.get("Material_Name", ""),
+                                        "Qty": x.get("Requested_Qty", 0),
+                                        "Unit_Cost": float(pd.to_numeric(str(x.get("Est_Unit_Cost", 0)).replace(",", ""), errors="coerce") or 0.0),
+                                        "Total_Cost": float(pd.to_numeric(str(x.get("Requested_Qty", 0)).replace(",", ""), errors="coerce") or 0.0) * float(pd.to_numeric(str(x.get("Est_Unit_Cost", 0)).replace(",", ""), errors="coerce") or 0.0)
+                                    }
+                                    for x in items_r
+                                ]),
+                                total_cost=est_tot,
+                                req_name=user_name,
+                                appr_name="Manager",
+                                notes=str(first_r.get("Notes", ""))
+                            )
+                            st.download_button(
+                                f"📥 Download {rid} PDF",
+                                data=sent_pdf,
+                                file_name=f"{rid}.pdf",
+                                mime="application/pdf",
+                                key=f"dl_sent_{rid}"
+                            )
                     st.divider()
             except Exception:
                 pass
@@ -1791,7 +2065,7 @@ if authenticate():
                     if _uc > 0:
                         unit_cost_lookup[_mid] = _uc
 
-            st.write("**🔍 Auto-Suggested Items (Below Reorder Level)**")
+            st.markdown("#### 🔍 Auto-Suggested Items (Below Reorder Level)")
             if not df_mat.empty and current_stock:
                 suggested = []
                 for _, row in df_mat.iterrows():
@@ -1813,8 +2087,8 @@ if authenticate():
                 st.info("No material or stock data available.")
 
             st.divider()
-            st.write("**➕ Bulk Add Items to Request**")
-            search_mat = st.text_input("🔍 Filter materials by name (type to search):", "")
+            st.markdown("#### ➕ Bulk Add Items to Request")
+            search_mat = st.text_input("🔍 Filter materials by name:", "", placeholder="Type material name...")
 
             df_mat_filtered = df_mat.copy()
             if search_mat and not df_mat_filtered.empty:
@@ -1872,9 +2146,15 @@ if authenticate():
                         st.warning("No items selected.")
 
             if st.session_state.pr_cart:
-                st.write("**🛒 Current Request Cart**")
+                st.markdown("#### 🛒 Current Request Cart")
                 df_cart = pd.DataFrame(st.session_state.pr_cart)
-                st.dataframe(df_cart[["Material_Name", "Qty", "Unit_Cost", "Total_Cost"]], use_container_width=True, hide_index=True)
+                st.dataframe(
+                    df_cart[["Material_Name", "Qty", "Unit_Cost", "Total_Cost"]].style.format({
+                        "Qty": "{:,.0f}", "Unit_Cost": "ETB {:,.2f}", "Total_Cost": "ETB {:,.2f}"
+                    }),
+                    use_container_width=True,
+                    hide_index=True
+                )
 
                 total_pr_cost = float(df_cart["Total_Cost"].sum())
                 st.metric("Total Estimated Purchase Cost", f"ETB {total_pr_cost:,.2f}")
@@ -1888,7 +2168,8 @@ if authenticate():
 
                 _req_notes_for_pdf = st.text_area("Notes (for PDF & Purchaser):", key="pr_notes_pdf", height=80, placeholder="e.g. Urgent for Batch X...")
 
-                if st.button("Generate Purchase Request PDF", type="primary"):
+                act1, act2 = st.columns(2)
+                if act1.button("Generate Purchase Request PDF", type="primary", use_container_width=True):
                     req_id = f"PR-{datetime.datetime.now().strftime('%Y%m%d-%H%M')}"
                     date_str = datetime.datetime.now().strftime("%b %d, %Y")
                     st.session_state.pr_pdf = generate_purchase_request_pdf(
@@ -1897,6 +2178,11 @@ if authenticate():
                         appr_name=appr_name, notes=_req_notes_for_pdf
                     )
 
+                if act2.button("Clear Cart", use_container_width=True):
+                    st.session_state.pr_cart = []
+                    st.session_state.pop("pr_pdf", None)
+                    st.rerun()
+
                 if "pr_pdf" in st.session_state:
                     st.download_button(
                         "📥 Download Purchase Request PDF",
@@ -1904,11 +2190,6 @@ if authenticate():
                         file_name="BED SOLUTION_Request.pdf",
                         mime="application/pdf"
                     )
-
-                if st.button("Clear Cart"):
-                    st.session_state.pr_cart = []
-                    st.session_state.pop("pr_pdf", None)
-                    st.rerun()
 
                 st.divider()
                 with st.form("send_req_form_sofa"):
@@ -1960,7 +2241,7 @@ if authenticate():
                 mode = "purch" if _sel.startswith("🛒") else "appr"
 
             if mode == "purch":
-                st.subheader("📱 Purchaser Mobile Hub")
+                st.markdown("### 📱 Purchaser Hub")
                 st.caption(f"Logged in as **{user_name}**. Process requests item-by-item below.")
 
                 if "purch_flash" in st.session_state:
@@ -2010,12 +2291,11 @@ if authenticate():
                 if not pend_reqs:
                     st.info("📭 No pending requests from the Maker right now.")
                 else:
-                    from collections import defaultdict
                     _grp = defaultdict(list)
                     for r in pend_reqs:
                         _grp[r.get("Request_ID", "")].append(r)
 
-                    st.markdown(f"### 📋 Pending Requests ({len(_grp)})")
+                    st.markdown(f"#### 📋 Pending Requests ({len(_grp)})")
                     sel_req = st.selectbox(
                         "Select Request ID:",
                         sorted(_grp.keys(), reverse=True),
@@ -2029,7 +2309,7 @@ if authenticate():
                         sup_options_dropdown = ["(Unknown / Other - Type Below)"] + sup_names_all
 
                         with st.form(f"submit_req_mobile_{sel_req}"):
-                            st.markdown("💡 *Review items below. Uncheck to **drop**, update actual counts, and select individual payment methods.*")
+                            st.caption("Review items below. Uncheck to **drop**, update actual counts, and select individual payment methods.")
                             _purch_notes = st.text_input("General notes for this submission:", key=f"pn_mob_{sel_req}")
                             st.divider()
 
@@ -2042,7 +2322,7 @@ if authenticate():
                                 st.markdown(f"""
                                 <div class="purchaser-card">
                                     <b>📦 {m_name}</b><br>
-                                    <span style="font-size:12px; color:#aaa;">Requested Qty: {req_qty:,.0f} | Est. Cost: ETB {est_c:,.2f}</span>
+                                    <span style="font-size:12px; color:#9AA6BC;">Requested Qty: {req_qty:,.0f} | Est. Cost: ETB {est_c:,.2f}</span>
                                 </div>
                                 """, unsafe_allow_html=True)
 
@@ -2117,10 +2397,9 @@ if authenticate():
                                     st.error(f"Submit failed: {e}")
 
                 st.divider()
-                st.subheader("📥 Download PDF Report")
+                st.markdown("#### 📥 Download PDF Report")
                 my_reps = [r for r in all_reps if user_name in str(r.get("Notes", ""))]
                 if my_reps:
-                    from collections import defaultdict
                     rep_groups = defaultdict(list)
                     for r in my_reps:
                         rep_groups[str(r.get("Report_ID", ""))[:19]].append(r)
@@ -2143,7 +2422,7 @@ if authenticate():
                     st.info("No purchase reports found under your name yet.")
 
             else:
-                st.subheader("✅ Approver — Review & Post")
+                st.markdown("### ✅ Approver — Review & Post")
                 if "appr_flash" in st.session_state:
                     st.success(st.session_state.pop("appr_flash"))
 
@@ -2164,12 +2443,11 @@ if authenticate():
                 if not pend:
                     st.info("No pending reports. When the Purchaser submits, they'll appear here.")
                 else:
-                    from collections import defaultdict
                     groups = defaultdict(list)
                     for r in pend:
                         groups[str(r.get("Report_ID", ""))[:19]].append(r)
 
-                    st.markdown(f"### Pending ({len(pend)} items in {len(groups)} batch(es))")
+                    st.markdown(f"#### Pending ({len(pend)} items in {len(groups)} batch(es))")
 
                     for batch_id, items in groups.items():
                         with st.expander(f"📦 Batch {batch_id} — {len(items)} item(s)", expanded=True):
@@ -2226,7 +2504,7 @@ if authenticate():
     # =====================================================================
     if "analytics" in tab_map:
         with tab_map["analytics"]:
-            st.subheader("📈 Operational & Financial Intelligence")
+            st.markdown("### 📈 Operational & Financial Intelligence")
             st.caption("Unit economics, stock runway, supplier cost behavior, and tied-up capital.")
 
             an_tab1, an_tab2, an_tab3, an_tab4 = st.tabs([
@@ -2237,7 +2515,7 @@ if authenticate():
             ])
 
             with an_tab1:
-                st.markdown("### 🛋️ Sofa Model Profitability & Unit Economics")
+                st.markdown("#### 🛋️ Sofa Model Profitability & Unit Economics")
                 if not df_sales_filt.empty and "Model_Name" in df_sales_filt.columns:
                     df_econ = df_sales_filt.copy()
                     model_econ = (
@@ -2268,7 +2546,7 @@ if authenticate():
                         yaxis2=dict(title="Gross Margin (%)", overlaying="y", side="right", showgrid=False),
                         barmode="group"
                     )
-                    st.plotly_chart(fig_econ, use_container_width=True)
+                    st.plotly_chart(style_plotly_chart(fig_econ), use_container_width=True)
 
                     st.dataframe(
                         model_econ[[
@@ -2286,7 +2564,7 @@ if authenticate():
                     st.info("No sales data in the selected range to compute model unit economics.")
 
             with an_tab2:
-                st.markdown("### ⏳ Stock Runway & Reorder Urgency")
+                st.markdown("#### ⏳ Stock Runway & Reorder Urgency")
                 st.caption("Estimates how many days current stock will last based on recorded issue pace.")
 
                 if not df_mat.empty and current_stock:
@@ -2342,7 +2620,7 @@ if authenticate():
                             title="Estimated Days of Stock Remaining (Lower = More Urgent)"
                         )
                         fig_run.update_layout(yaxis={"categoryorder": "total ascending"})
-                        st.plotly_chart(fig_run, use_container_width=True)
+                        st.plotly_chart(style_plotly_chart(fig_run), use_container_width=True)
 
                     st.dataframe(
                         df_runway_sorted.style.format({
@@ -2357,7 +2635,7 @@ if authenticate():
                     st.info("No material stock data available.")
 
             with an_tab3:
-                st.markdown("### 🧾 Weighted Cost Drift & Supplier Spend")
+                st.markdown("#### 🧾 Weighted Cost Drift & Supplier Spend")
                 if not df_pur.empty:
                     pur_calc = df_pur.copy()
                     pur_calc["Line_Total"] = pur_calc["Qty"] * pur_calc["Unit_Cost"]
@@ -2379,7 +2657,7 @@ if authenticate():
                         })
 
                     df_mprice = pd.DataFrame(mat_price_rows).sort_values(by="Latest_vs_Avg_%", ascending=False)
-                    st.markdown("#### Latest Cost vs. Weighted Average Cost")
+                    st.markdown("##### Latest Cost vs. Weighted Average Cost")
                     st.dataframe(
                         df_mprice.head(20).style.format({
                             "Weighted_Avg_Cost": "ETB {:,.2f}", "Latest_Unit_Cost": "ETB {:,.2f}",
@@ -2390,7 +2668,7 @@ if authenticate():
                     )
 
                     st.divider()
-                    st.markdown("#### Supplier Spend & Open Credit Exposure")
+                    st.markdown("##### Supplier Spend & Open Credit Exposure")
                     sup_name_map = dict(zip(df_sup["Supplier_ID"], df_sup["Supplier_Name"])) if not df_sup.empty else {}
                     sup_spend = (
                         pur_calc.groupby("Supplier_ID")
@@ -2407,7 +2685,7 @@ if authenticate():
                         barmode="group",
                         title="Top Suppliers: Total Purchases vs. Open Credit Balance (ETB)"
                     )
-                    st.plotly_chart(fig_sup, use_container_width=True)
+                    st.plotly_chart(style_plotly_chart(fig_sup), use_container_width=True)
 
                     st.dataframe(
                         sup_spend[["Supplier_Name", "Orders_Count", "Total_Purchases_ETB", "Credit_Purchases_ETB", "Open_Balance_ETB"]].style.format({
@@ -2421,7 +2699,7 @@ if authenticate():
                     st.info("No purchase records available for supplier and price analysis.")
 
             with an_tab4:
-                st.markdown("### 🧊 Cash Tied Up in Inventory (FIFO)")
+                st.markdown("#### 🧊 Cash Tied Up in Inventory (FIFO)")
                 st.caption("Highlights where your working capital is sitting and how long since each material was last issued.")
 
                 if not df_layers.empty:
@@ -2457,7 +2735,7 @@ if authenticate():
                             title="Top 15 Materials by Capital Tied Up (Color = Days Since Last Issue)"
                         )
                         fig_cap.update_layout(yaxis={"categoryorder": "total ascending"})
-                        st.plotly_chart(fig_cap, use_container_width=True)
+                        st.plotly_chart(style_plotly_chart(fig_cap), use_container_width=True)
 
                         st.dataframe(
                             df_cap.style.format({
