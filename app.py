@@ -50,6 +50,7 @@ st.markdown("""
         background: radial-gradient(circle at 15% 10%, rgba(31, 56, 100, 0.22) 0%, rgba(11, 13, 18, 1) 52%);
     }
 
+    /* Executive Top Banner */
     .exec-banner {
         background: linear-gradient(125deg, #121826 0%, #192844 55%, #11151f 100%);
         border: 1px solid rgba(212, 175, 55, 0.28);
@@ -97,6 +98,7 @@ st.markdown("""
         font-weight: 600;
     }
 
+    /* Metric Cards */
     .stMetric {
         background: linear-gradient(145deg, rgba(24, 34, 54, 0.92) 0%, rgba(15, 19, 29, 0.96) 100%);
         padding: 18px 20px;
@@ -124,6 +126,16 @@ st.markdown("""
         letter-spacing: -0.01em;
     }
 
+    /* Section Headers */
+    .section-card {
+        background: rgba(18, 23, 35, 0.78);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        border-radius: 12px;
+        padding: 16px 20px;
+        margin-bottom: 16px;
+    }
+
+    /* Expanders & Dataframes */
     div[data-testid="stExpander"] {
         background: rgba(17, 22, 33, 0.85);
         border: 1px solid rgba(212, 175, 55, 0.2);
@@ -136,6 +148,7 @@ st.markdown("""
         border: 1px solid rgba(255, 255, 255, 0.07);
     }
 
+    /* Wrapping Tabs */
     div[data-baseweb="tab-list"] {
         display: flex !important;
         flex-wrap: wrap !important;
@@ -167,6 +180,7 @@ st.markdown("""
         box-shadow: 0 4px 12px rgba(31, 56, 100, 0.45);
     }
 
+    /* Status & Callout Boxes */
     .info-box {
         background: rgba(31, 56, 100, 0.24);
         color: #DCE8FF;
@@ -225,9 +239,9 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- HELPERS ---
-def get_sheet_url_from_secrets():
-    for key in ("bed_solution_url", "BED_SOLUTION_URL", "bed solution_url", "BED_SOLUTION_url", "liq_url", "sheet_url"):
-        val = st.secrets.get(key, "")
+def _resolve_sheet_url():
+    for key in ("bed_solution_url", "BED_SOLUTION_URL", "bed solution_url", "BED_SOLUTION_url", "sheet_url", "liq_url"):
+        val = st.secrets.get(key)
         if val and str(val).strip():
             return str(val).strip()
     return ""
@@ -320,7 +334,7 @@ def get_google_creds():
 
 def _get_sheets_global():
     creds = get_google_creds()
-    sheet_url = get_sheet_url_from_secrets()
+    sheet_url = _resolve_sheet_url()
     if not sheet_url:
         raise ValueError("Missing Google Sheet URL in Streamlit Secrets.")
     return gspread.authorize(creds).open_by_url(sheet_url)
@@ -769,9 +783,9 @@ def generate_purchase_request_pdf(req_id, date_str, supplier_name, request_df, t
 
     headers = ["#", "Material Name", "Qty", "Est. Unit Cost", "Total (ETB)"]
     rows = []
-    for i, (_, r) in enumerate(request_df.iterrows()):
+    for row_num, (_, r) in enumerate(request_df.iterrows(), start=1):
         rows.append([
-            str(i + 1), str(r["Material_Name"]), str(r["Qty"]),
+            str(row_num), str(r["Material_Name"]), str(r["Qty"]),
             f"{float(r['Unit_Cost']):,.2f}", f"{float(r['Total_Cost']):,.2f}"
         ])
 
@@ -982,7 +996,7 @@ if authenticate():
             st.caption(f"Active Window: **{filter_badge}**")
         elif filter_option == "Custom Range (EC)":
             day_choices = list(range(1, 31))
-            safe_day_idx = min(max(0, curr_eth_day - 1), len(day_choices) - 1)
+            safe_day_idx = min(max(0, int(curr_eth_day) - 1), len(day_choices) - 1)
             st.write("**From**")
             c1, c2, c3 = st.columns(3)
             start_y = c1.selectbox("Year", range(curr_eth_year - 5, curr_eth_year + 2), index=5, key="sy")
@@ -1018,7 +1032,7 @@ if authenticate():
 
     @st.cache_data(ttl=300, show_spinner="Syncing bed solution ledger...")
     def load_data():
-        url = get_sheet_url_from_secrets()
+        url = _resolve_sheet_url()
         if not url:
             st.error("❌ Missing Google Sheet URL in Streamlit Secrets (e.g. 'bed_solution_url').")
             st.stop()
