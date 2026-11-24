@@ -27,12 +27,13 @@ _REQ_HDRS = [
 ]
 
 # --- AUTO-DOWNLOAD FONTS ---
+font_ready = False
 try:
     if not os.path.exists("DejaVuSans.ttf"):
         urllib.request.urlretrieve("https://unpkg.com/dejavu-fonts-ttf@2.37/ttf/DejaVuSans.ttf", "DejaVuSans.ttf")
     if not os.path.exists("DejaVuSans-Bold.ttf"):
         urllib.request.urlretrieve("https://unpkg.com/dejavu-fonts-ttf@2.37/ttf/DejaVuSans-Bold.ttf", "DejaVuSans-Bold.ttf")
-    font_ready = True
+    font_ready = os.path.exists("DejaVuSans.ttf") and os.path.exists("DejaVuSans-Bold.ttf")
 except Exception:
     font_ready = False
 
@@ -49,7 +50,6 @@ st.markdown("""
         background: radial-gradient(circle at 15% 10%, rgba(31, 56, 100, 0.22) 0%, rgba(11, 13, 18, 1) 52%);
     }
 
-    /* Executive Top Banner */
     .exec-banner {
         background: linear-gradient(125deg, #121826 0%, #192844 55%, #11151f 100%);
         border: 1px solid rgba(212, 175, 55, 0.28);
@@ -97,7 +97,6 @@ st.markdown("""
         font-weight: 600;
     }
 
-    /* Metric Cards */
     .stMetric {
         background: linear-gradient(145deg, rgba(24, 34, 54, 0.92) 0%, rgba(15, 19, 29, 0.96) 100%);
         padding: 18px 20px;
@@ -125,16 +124,6 @@ st.markdown("""
         letter-spacing: -0.01em;
     }
 
-    /* Section Headers */
-    .section-card {
-        background: rgba(18, 23, 35, 0.78);
-        border: 1px solid rgba(255, 255, 255, 0.06);
-        border-radius: 12px;
-        padding: 16px 20px;
-        margin-bottom: 16px;
-    }
-
-    /* Expanders & Dataframes */
     div[data-testid="stExpander"] {
         background: rgba(17, 22, 33, 0.85);
         border: 1px solid rgba(212, 175, 55, 0.2);
@@ -147,7 +136,6 @@ st.markdown("""
         border: 1px solid rgba(255, 255, 255, 0.07);
     }
 
-    /* Wrapping Tabs */
     div[data-baseweb="tab-list"] {
         display: flex !important;
         flex-wrap: wrap !important;
@@ -179,7 +167,6 @@ st.markdown("""
         box-shadow: 0 4px 12px rgba(31, 56, 100, 0.45);
     }
 
-    /* Status & Callout Boxes */
     .info-box {
         background: rgba(31, 56, 100, 0.24);
         color: #DCE8FF;
@@ -238,6 +225,13 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- HELPERS ---
+def get_sheet_url_from_secrets():
+    for key in ("bed_solution_url", "BED_SOLUTION_URL", "bed solution_url", "BED_SOLUTION_url", "liq_url", "sheet_url"):
+        val = st.secrets.get(key, "")
+        if val and str(val).strip():
+            return str(val).strip()
+    return ""
+
 def to_ethiopian(date_val):
     if pd.isna(date_val):
         return ""
@@ -321,18 +315,21 @@ def get_google_creds():
                 return service_account.Credentials.from_service_account_info(key_dict, scopes=scope)
             return service_account.Credentials.from_service_account_info(secret_data, scopes=scope)
     except Exception:
-        return service_account.Credentials.from_service_account_file("key.json", scopes=scope)
+        pass
+    return service_account.Credentials.from_service_account_file("key.json", scopes=scope)
 
 def _get_sheets_global():
     creds = get_google_creds()
-    sheet_url = str(st.secrets.get("bed solution_url") or st.secrets.get("BED_SOLUTION_url") or "").strip()
+    sheet_url = get_sheet_url_from_secrets()
+    if not sheet_url:
+        raise ValueError("Missing Google Sheet URL in Streamlit Secrets.")
     return gspread.authorize(creds).open_by_url(sheet_url)
 
 def _ensure_sheet(ws_name, headers):
     sh = _get_sheets_global()
     try:
         ws = sh.worksheet(ws_name)
-        first_row = ws.row_values(1)
+        first_row = [str(h).strip() for h in ws.row_values(1)]
         if not first_row or first_row[0] != headers[0]:
             ws.insert_row(headers, index=1)
         return ws
@@ -460,7 +457,7 @@ def _draw_report_header(pdf, f_name, title, subtitle):
 def _draw_table(pdf, f_name, headers, rows, font_size=6):
     NAVY, WHITE = (31, 56, 100), (255, 255, 255)
     LIGHT_GRAY, DARK = (245, 247, 250), (50, 50, 50)
-    col_w = (pdf.w - 20) / len(headers)
+    col_w = (pdf.w - 20) / max(1, len(headers))
 
     def _header_row():
         pdf.set_fill_color(*NAVY); pdf.set_text_color(*WHITE); pdf.set_font(f_name, "B", font_size + 0.5)
@@ -772,10 +769,10 @@ def generate_purchase_request_pdf(req_id, date_str, supplier_name, request_df, t
 
     headers = ["#", "Material Name", "Qty", "Est. Unit Cost", "Total (ETB)"]
     rows = []
-    for i, r in request_df.iterrows():
+    for i, (_, r) in enumerate(request_df.iterrows()):
         rows.append([
             str(i + 1), str(r["Material_Name"]), str(r["Qty"]),
-            f"{r['Unit_Cost']:,.2f}", f"{r['Total_Cost']:,.2f}"
+            f"{float(r['Unit_Cost']):,.2f}", f"{float(r['Total_Cost']):,.2f}"
         ])
 
     _draw_table(pdf, f_name, headers, rows, font_size=8)
@@ -984,16 +981,18 @@ if authenticate():
             filter_badge = f"Year {curr_eth_year} EC"
             st.caption(f"Active Window: **{filter_badge}**")
         elif filter_option == "Custom Range (EC)":
+            day_choices = list(range(1, 31))
+            safe_day_idx = min(max(0, curr_eth_day - 1), len(day_choices) - 1)
             st.write("**From**")
             c1, c2, c3 = st.columns(3)
             start_y = c1.selectbox("Year", range(curr_eth_year - 5, curr_eth_year + 2), index=5, key="sy")
             start_m = c2.selectbox("Month", range(1, 14), index=curr_eth_month - 1, format_func=lambda x: eth_months[x - 1], key="sm")
-            start_d = c3.selectbox("Day", range(1, 31), index=0, key="sd")
+            start_d = c3.selectbox("Day", day_choices, index=0, key="sd")
             st.write("**To**")
             c4, c5, c6 = st.columns(3)
             end_y = c4.selectbox("Year", range(curr_eth_year - 5, curr_eth_year + 2), index=5, key="ey")
             end_m = c5.selectbox("Month", range(1, 14), index=curr_eth_month - 1, format_func=lambda x: eth_months[x - 1], key="em")
-            end_d = c6.selectbox("Day", range(1, 31), index=max(0, curr_eth_day - 1), key="ed")
+            end_d = c6.selectbox("Day", day_choices, index=safe_day_idx, key="ed")
             start_date = get_greg_date(start_y, start_m, start_d)
             end_date = get_greg_date(end_y, end_m, end_d)
             filter_badge = f"{eth_months[start_m-1]} {start_y} → {eth_months[end_m-1]} {end_y} EC"
@@ -1019,9 +1018,9 @@ if authenticate():
 
     @st.cache_data(ttl=300, show_spinner="Syncing bed solution ledger...")
     def load_data():
-        url = str(st.secrets.get("bed solution_url") or st.secrets.get("BED_SOLUTION_url") or "").strip()
+        url = get_sheet_url_from_secrets()
         if not url:
-            st.error("❌ Missing 'bed solution_url' in Streamlit Secrets.")
+            st.error("❌ Missing Google Sheet URL in Streamlit Secrets (e.g. 'bed_solution_url').")
             st.stop()
 
         tabs = [
@@ -1078,7 +1077,7 @@ if authenticate():
             elif status == 429:
                 st.warning("⚠️ Google Sheets Rate Limit (429): Too many requests. Please wait 60 seconds and refresh.")
             elif status == 404:
-                st.error("❌ Spreadsheet Not Found (404): Check 'bed solution_url' in Streamlit Secrets.")
+                st.error("❌ Spreadsheet Not Found (404): Check your Google Sheet URL in Streamlit Secrets.")
             else:
                 st.error(f"❌ Google Sheets API Error ({status}): {e}")
             st.stop()
@@ -1536,7 +1535,7 @@ if authenticate():
                             st.download_button(
                                 f"📥 Download PDF for Batch {selected_batch}",
                                 data=batch_pdf_bytes,
-                                file_name=f"bed solution_Batch_{selected_batch}.pdf",
+                                file_name=f"bed_solution_Batch_{selected_batch}.pdf",
                                 mime="application/pdf",
                                 type="primary"
                             )
@@ -1558,7 +1557,7 @@ if authenticate():
                     .sort_values(["Eth_Year", "Eth_Month"], ascending=False)
                 )
 
-                for idx_m, row in monthly.iterrows():
+                for idx_m, (_, row) in enumerate(monthly.iterrows()):
                     m_name = get_eth_month_label(row["Eth_Year"], row["Eth_Month"])
                     with st.expander(
                         f"📅 {m_name}  •  Revenue: ETB {row['Total_Sale_Price']:,.0f}  •  Gross Profit: ETB {row['Gross_Profit']:,.0f}",
@@ -1872,7 +1871,7 @@ if authenticate():
                     st.download_button(
                         "📥 Download Detailed Stock Audit (PDF)",
                         data=pdf_bytes,
-                        file_name=f"bed solution_Stock_Audit_{sel_label.replace(' ', '_')}.pdf",
+                        file_name=f"bed_solution_Stock_Audit_{sel_label.replace(' ', '_')}.pdf",
                         mime="application/pdf",
                         type="primary"
                     )
@@ -1985,7 +1984,7 @@ if authenticate():
                 st.download_button(
                     "📥 Download Detailed Supplier Audit (PDF)",
                     data=pdf_bytes_sup,
-                    file_name=f"bed solution_Supplier_Audit_{sel_label_s.replace(' ', '_')}.pdf",
+                    file_name=f"bed_solution_Supplier_Audit_{sel_label_s.replace(' ', '_')}.pdf",
                     mime="application/pdf",
                     type="primary"
                 )
@@ -2140,6 +2139,7 @@ if authenticate():
                             added_count += 1
 
                     if added_count > 0:
+                        st.session_state.pop("pr_pdf", None)
                         st.success(f"Added {added_count} item(s) to request.")
                         st.rerun()
                     else:
@@ -2187,7 +2187,7 @@ if authenticate():
                     st.download_button(
                         "📥 Download Purchase Request PDF",
                         data=st.session_state["pr_pdf"],
-                        file_name="bed solution_Request.pdf",
+                        file_name="bed_solution_Request.pdf",
                         mime="application/pdf"
                     )
 
@@ -2276,6 +2276,8 @@ if authenticate():
                     all_reps = rep_data_raw
                     _submitted_pairs = set()
                     for rep in all_reps:
+                        if str(rep.get("Status", "")).strip().lower() == "rejected":
+                            continue
                         note = str(rep.get("Notes", ""))
                         if note.startswith("From "):
                             req_id_part = note.split(" | ")[0].replace("From ", "").strip()
@@ -2413,7 +2415,7 @@ if authenticate():
                         st.download_button(
                             "📥 Download PDF Report",
                             data=rep_pdf_bytes,
-                            file_name=f"bed solution_Purchase_Report_{sel_rep_id}.pdf",
+                            file_name=f"bed_solution_Purchase_Report_{sel_rep_id}.pdf",
                             mime="application/pdf",
                             type="primary",
                             use_container_width=True
@@ -2453,7 +2455,7 @@ if authenticate():
                         with st.expander(f"📦 Batch {batch_id} — {len(items)} item(s)", expanded=True):
                             df_b = pd.DataFrame(items)
                             st.dataframe(df_b[["Supplier_Name", "Material_Name", "Qty", "Unit_Cost", "Payment_Type", "Total"]], use_container_width=True, hide_index=True)
-                            _ = st.text_input("Approver notes (optional):", key=f"notes_bed_{batch_id}")
+                            appr_notes = st.text_input("Approver notes (optional):", key=f"notes_bed_{batch_id}")
                             ac1, ac2 = st.columns(2)
 
                             if ac1.button("✅ Approve", key=f"ok_bed_{batch_id}", type="primary", use_container_width=True):
@@ -2472,10 +2474,23 @@ if authenticate():
                                     pur_ws.append_rows(pur_rows, value_input_option="USER_ENTERED")
 
                                     hdr = [str(h).strip() for h in rep_ws.row_values(1)]
-                                    c_status, c_appr = hdr.index("Status") + 1, hdr.index("Approver") + 1
+                                    c_status = hdr.index("Status") + 1
+                                    c_appr = hdr.index("Approver") + 1
+                                    c_date = hdr.index("Approved_Date") + 1 if "Approved_Date" in hdr else None
+                                    c_notes = hdr.index("Notes") + 1 if "Notes" in hdr else None
                                     target_ids = {it.get("Report_ID", "") for it in items}
                                     target_rows = _find_all_matching_rows(rep_ws, lambda rec: rec.get("Report_ID", "") in target_ids)
-                                    updates = [gspread.Cell(r, c, v) for r in target_rows for c, v in [(c_status, "Approved"), (c_appr, approver)]]
+                                    now_ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                    updates = []
+                                    for r in target_rows:
+                                        updates.append(gspread.Cell(r, c_status, "Approved"))
+                                        updates.append(gspread.Cell(r, c_appr, approver))
+                                        if c_date:
+                                            updates.append(gspread.Cell(r, c_date, now_ts))
+                                        if c_notes and appr_notes.strip():
+                                            prev_n = str(rep_ws.cell(r, c_notes).value or "")
+                                            merged_n = f"{prev_n} | Appr: {appr_notes.strip()}" if prev_n else f"Appr: {appr_notes.strip()}"
+                                            updates.append(gspread.Cell(r, c_notes, merged_n))
                                     if updates:
                                         rep_ws.update_cells(updates)
 
@@ -2488,13 +2503,27 @@ if authenticate():
                             if ac2.button("❌ Reject", key=f"no_bed_{batch_id}", use_container_width=True):
                                 try:
                                     hdr = [str(h).strip() for h in rep_ws.row_values(1)]
-                                    c_status, c_appr = hdr.index("Status") + 1, hdr.index("Approver") + 1
+                                    c_status = hdr.index("Status") + 1
+                                    c_appr = hdr.index("Approver") + 1
+                                    c_date = hdr.index("Approved_Date") + 1 if "Approved_Date" in hdr else None
+                                    c_notes = hdr.index("Notes") + 1 if "Notes" in hdr else None
                                     target_ids = {it.get("Report_ID", "") for it in items}
                                     target_rows = _find_all_matching_rows(rep_ws, lambda rec: rec.get("Report_ID", "") in target_ids)
-                                    updates = [gspread.Cell(r, c, v) for r in target_rows for c, v in [(c_status, "Rejected"), (c_appr, approver)]]
+                                    now_ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                    updates = []
+                                    for r in target_rows:
+                                        updates.append(gspread.Cell(r, c_status, "Rejected"))
+                                        updates.append(gspread.Cell(r, c_appr, approver))
+                                        if c_date:
+                                            updates.append(gspread.Cell(r, c_date, now_ts))
+                                        if c_notes and appr_notes.strip():
+                                            prev_n = str(rep_ws.cell(r, c_notes).value or "")
+                                            merged_n = f"{prev_n} | Rej: {appr_notes.strip()}" if prev_n else f"Rej: {appr_notes.strip()}"
+                                            updates.append(gspread.Cell(r, c_notes, merged_n))
                                     if updates:
                                         rep_ws.update_cells(updates)
                                     st.session_state.appr_flash = f"❌ Rejected {len(items)} item(s)."
+                                    load_data.clear()
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"Failed: {e}")
