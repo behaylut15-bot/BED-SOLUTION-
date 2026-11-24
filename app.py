@@ -14,7 +14,7 @@ import urllib.request
 from collections import defaultdict
 
 st.set_page_config(
-    page_title="BED SOLUTION | Executive Command",
+    page_title="bed solution | Executive Command",
     page_icon="🛋️",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -325,7 +325,7 @@ def get_google_creds():
 
 def _get_sheets_global():
     creds = get_google_creds()
-    sheet_url = str(st.secrets.get("BED SOLUTION_url") or st.secrets.get("BED_SOLUTION_url") or "").strip()
+    sheet_url = str(st.secrets.get("bed solution_url") or st.secrets.get("BED_SOLUTION_url") or "").strip()
     return gspread.authorize(creds).open_by_url(sheet_url)
 
 def _ensure_sheet(ws_name, headers):
@@ -382,7 +382,7 @@ def _find_all_matching_rows(ws, match_fn):
     return out
 
 # ============================================================
-# PROFESSIONAL PDF REPORT ENGINE (BED SOLUTION BRANDING)
+# PROFESSIONAL PDF REPORT ENGINE (bed solution BRANDING)
 # ============================================================
 class BEDSOLUTIONReportPDF(FPDF):
     def __init__(self, font_name="Helvetica"):
@@ -399,7 +399,7 @@ class BEDSOLUTIONReportPDF(FPDF):
         self.set_y(self.h - 12)
         self.set_font(self.font_name, "", 7)
         self.set_text_color(140, 140, 140)
-        self.cell(0, 5, f"BED SOLUTION  |  Confidential Audit Report  |  Page {self.page_no()}", align="C")
+        self.cell(0, 5, f"bed solution  |  Confidential Audit Report  |  Page {self.page_no()}", align="C")
 
 def _init_pdf(fonts_available):
     if fonts_available:
@@ -429,13 +429,13 @@ def _draw_report_header(pdf, f_name, title, subtitle):
         except Exception:
             text_x = 10
 
-    brand_name = "BED SOLUTION"
+    brand_name = "bed solution"
 
     pdf.set_xy(text_x, 5); pdf.set_font(f_name, "B", 16); pdf.set_text_color(*GOLD)
     pdf.cell(0, 8, brand_name, ln=True, align="L")
 
     pdf.set_xy(text_x, 13); pdf.set_font(f_name, "", 8); pdf.set_text_color(230, 230, 230)
-    pdf.cell(0, 4, "Quality Sofa Manufacturing", align="L")
+    pdf.cell(0, 4, "Quality bed Manufacturing", align="L")
 
     pdf.set_y(7); pdf.set_x(10); pdf.set_font(f_name, "B", 9); pdf.set_text_color(*GOLD)
     pdf.cell(0, 8, "OFFICIAL AUDIT REPORT", align="R")
@@ -648,7 +648,7 @@ def generate_batch_pdf(batch_id, model_name, qty, total_cost, direct_cost, overh
     pdf.rect(10, info_y, pdf.w - 20, 22, "DF")
     pdf.set_fill_color(*GOLD); pdf.rect(10, info_y, 3, 22, "F")
 
-    fields = [("Batch ID", batch_id), ("Sofa Model", model_name), ("Quantity", qty)]
+    fields = [("Batch ID", batch_id), ("bed Model", model_name), ("Quantity", qty)]
     pdf.set_y(info_y + 3)
     for label, value in fields:
         pdf.set_x(18); pdf.set_font(f_name, "B", 9); pdf.set_text_color(*NAVY)
@@ -862,7 +862,7 @@ def authenticate():
         return True
 
     st.markdown('<div class="login-shell">', unsafe_allow_html=True)
-    st.markdown('<div class="exec-kicker">BED SOLUTION OPERATIONS</div>', unsafe_allow_html=True)
+    st.markdown('<div class="exec-kicker">bed solution OPERATIONS</div>', unsafe_allow_html=True)
     st.markdown("### 🔒 Workspace Sign In")
     st.caption("Select your assigned workspace profile to continue.")
 
@@ -876,7 +876,7 @@ def authenticate():
     if not users_secrets:
         pwd = st.text_input("Master Password", type="password", key="legacy_pwd")
         if st.button("Login", type="primary", use_container_width=True):
-            if pwd == st.secrets.get("app_password", "SOFA2026"):
+            if pwd == st.secrets.get("app_password", "bed2026"):
                 st.session_state.user = {"username": "manager", "name": "Manager", "role": "manager"}
                 st.rerun()
             else:
@@ -1006,8 +1006,8 @@ if authenticate():
     # --- EXECUTIVE HEADER BANNER ---
     st.markdown(f"""
         <div class="exec-banner">
-            <div class="exec-kicker">SOFA MANUFACTURING &amp; INVENTORY INTELLIGENCE &bull; {filter_badge.upper()}</div>
-            <p class="golden-title">BED SOLUTION</p>
+            <div class="exec-kicker">bed MANUFACTURING &amp; INVENTORY INTELLIGENCE &bull; {filter_badge.upper()}</div>
+            <p class="golden-title">bed solution</p>
             <p class="sub-title">Executive Operations &amp; Financial Command</p>
         </div>
     """, unsafe_allow_html=True)
@@ -1017,15 +1017,15 @@ if authenticate():
     if pd.isna(end_date):
         end_date = pd.to_datetime("2100-01-01")
 
-    @st.cache_data(ttl=300, show_spinner="Syncing BED SOLUTION ledger...")
+    @st.cache_data(ttl=300, show_spinner="Syncing bed solution ledger...")
     def load_data():
-        url = str(st.secrets.get("BED SOLUTION_url") or st.secrets.get("BED_SOLUTION_url") or "").strip()
+        url = str(st.secrets.get("bed solution_url") or st.secrets.get("BED_SOLUTION_url") or "").strip()
         if not url:
-            st.error("❌ Missing 'BED SOLUTION_url' in Streamlit Secrets.")
+            st.error("❌ Missing 'bed solution_url' in Streamlit Secrets.")
             st.stop()
 
         tabs = [
-            "Materials", "Suppliers", "Purchases", "Sofa_Models",
+            "Materials", "Suppliers", "Purchases", "bed_Models",
             "Production", "Material_Issues", "Sales", "Opening_Stock",
             "Opening_Payables", "Supplier_Payments"
         ]
@@ -1078,7 +1078,7 @@ if authenticate():
             elif status == 429:
                 st.warning("⚠️ Google Sheets Rate Limit (429): Too many requests. Please wait 60 seconds and refresh.")
             elif status == 404:
-                st.error("❌ Spreadsheet Not Found (404): Check 'BED SOLUTION_url' in Streamlit Secrets.")
+                st.error("❌ Spreadsheet Not Found (404): Check 'bed solution_url' in Streamlit Secrets.")
             else:
                 st.error(f"❌ Google Sheets API Error ({status}): {e}")
             st.stop()
@@ -1086,7 +1086,7 @@ if authenticate():
     data = load_data()
     df_mat, df_sup, df_pur = data["Materials"], data["Suppliers"], data["Purchases"]
     df_op_stock, df_op_pay, df_pay = data["Opening_Stock"], data["Opening_Payables"], data["Supplier_Payments"]
-    df_models, df_prod, df_issues, df_sales = data["Sofa_Models"], data["Production"], data["Material_Issues"], data["Sales"]
+    df_models, df_prod, df_issues, df_sales = data["bed_Models"], data["Production"], data["Material_Issues"], data["Sales"]
 
     # --- BULLETPROOF DATAFRAMES & SCHEMA SAFETY ---
     if df_pur.empty:
@@ -1436,7 +1436,7 @@ if authenticate():
             st.markdown("")
             c_left, c_right = st.columns(2)
             with c_left:
-                st.markdown("#### Top Selling Sofa Models")
+                st.markdown("#### Top Selling bed Models")
                 if not df_sales_filt.empty and "Model_Name" in df_sales_filt.columns:
                     top_models = df_sales_filt.groupby("Model_Name")["Qty_Sold"].sum().reset_index().sort_values(by="Qty_Sold", ascending=False).head(5)
                     fig = px.bar(
@@ -1536,7 +1536,7 @@ if authenticate():
                             st.download_button(
                                 f"📥 Download PDF for Batch {selected_batch}",
                                 data=batch_pdf_bytes,
-                                file_name=f"BED SOLUTION_Batch_{selected_batch}.pdf",
+                                file_name=f"bed solution_Batch_{selected_batch}.pdf",
                                 mime="application/pdf",
                                 type="primary"
                             )
@@ -1587,15 +1587,15 @@ if authenticate():
                         if not this_month_oh.empty:
                             month_consumable = float(this_month_oh["Monthly_Consumable_Cost"].values[0])
                             month_produced = float(this_month_oh["Monthly_Qty_Produced"].values[0])
-                            month_oh_per_sofa = float(this_month_oh["Overhead_Per_Unit"].values[0])
+                            month_oh_per_bed = float(this_month_oh["Overhead_Per_Unit"].values[0])
                         else:
-                            month_consumable, month_produced, month_oh_per_sofa = 0.0, 0.0, 0.0
+                            month_consumable, month_produced, month_oh_per_bed = 0.0, 0.0, 0.0
 
                         st.markdown(f"""
                         <div class="info-box">
                         <b>Workshop Overhead Allocation Formula:</b><br>
-                        Total Month Workshop Consumables ÷ Total Month Production = Overhead per Sofa<br>
-                        <b>ETB {month_consumable:,.2f}</b> ÷ <b>{month_produced:,.0f} sofas</b> = <b>ETB {month_oh_per_sofa:,.2f} per sofa</b>
+                        Total Month Workshop Consumables ÷ Total Month Production = Overhead per bed<br>
+                        <b>ETB {month_consumable:,.2f}</b> ÷ <b>{month_produced:,.0f} beds</b> = <b>ETB {month_oh_per_bed:,.2f} per bed</b>
                         </div>
                         """, unsafe_allow_html=True)
 
@@ -1872,7 +1872,7 @@ if authenticate():
                     st.download_button(
                         "📥 Download Detailed Stock Audit (PDF)",
                         data=pdf_bytes,
-                        file_name=f"BED SOLUTION_Stock_Audit_{sel_label.replace(' ', '_')}.pdf",
+                        file_name=f"bed solution_Stock_Audit_{sel_label.replace(' ', '_')}.pdf",
                         mime="application/pdf",
                         type="primary"
                     )
@@ -1985,7 +1985,7 @@ if authenticate():
                 st.download_button(
                     "📥 Download Detailed Supplier Audit (PDF)",
                     data=pdf_bytes_sup,
-                    file_name=f"BED SOLUTION_Supplier_Audit_{sel_label_s.replace(' ', '_')}.pdf",
+                    file_name=f"bed solution_Supplier_Audit_{sel_label_s.replace(' ', '_')}.pdf",
                     mime="application/pdf",
                     type="primary"
                 )
@@ -2113,7 +2113,7 @@ if authenticate():
                     hide_index=True,
                     use_container_width=True,
                     num_rows="fixed",
-                    key="sofa_bulk_editor"
+                    key="bed_bulk_editor"
                 )
 
                 if st.button("➕ Add Selected to Cart", type="primary"):
@@ -2187,12 +2187,12 @@ if authenticate():
                     st.download_button(
                         "📥 Download Purchase Request PDF",
                         data=st.session_state["pr_pdf"],
-                        file_name="BED SOLUTION_Request.pdf",
+                        file_name="bed solution_Request.pdf",
                         mime="application/pdf"
                     )
 
                 st.divider()
-                with st.form("send_req_form_sofa"):
+                with st.form("send_req_form_bed"):
                     req_sup_pref = st.text_input("Preferred supplier (optional):", "")
                     req_notes_txt = st.session_state.get("pr_notes_pdf", "")
                     send_it = st.form_submit_button("📤 Submit Request to Purchaser", type="primary")
@@ -2237,7 +2237,7 @@ if authenticate():
             elif role == "approver":
                 mode = "appr"
             else:
-                _sel = st.radio("Select mode:", ["🛒 Purchaser", "✅ Approver"], horizontal=True, key="sofa_t9_mode")
+                _sel = st.radio("Select mode:", ["🛒 Purchaser", "✅ Approver"], horizontal=True, key="bed_t9_mode")
                 mode = "purch" if _sel.startswith("🛒") else "appr"
 
             if mode == "purch":
@@ -2300,7 +2300,7 @@ if authenticate():
                         "Select Request ID:",
                         sorted(_grp.keys(), reverse=True),
                         format_func=lambda x: f"{x} ({len(_grp[x])} items)",
-                        key="sel_req_sofa_mob"
+                        key="sel_req_bed_mob"
                     )
 
                     if sel_req:
@@ -2413,7 +2413,7 @@ if authenticate():
                         st.download_button(
                             "📥 Download PDF Report",
                             data=rep_pdf_bytes,
-                            file_name=f"BED SOLUTION_Purchase_Report_{sel_rep_id}.pdf",
+                            file_name=f"bed solution_Purchase_Report_{sel_rep_id}.pdf",
                             mime="application/pdf",
                             type="primary",
                             use_container_width=True
@@ -2426,7 +2426,7 @@ if authenticate():
                 if "appr_flash" in st.session_state:
                     st.success(st.session_state.pop("appr_flash"))
 
-                approver = st.text_input("Approver name:", value=user_name, key="appr_name_sofa")
+                approver = st.text_input("Approver name:", value=user_name, key="appr_name_bed")
 
                 try:
                     rep_ws = _ensure_sheet(REP_SHEET, REP_HEADERS)
@@ -2453,10 +2453,10 @@ if authenticate():
                         with st.expander(f"📦 Batch {batch_id} — {len(items)} item(s)", expanded=True):
                             df_b = pd.DataFrame(items)
                             st.dataframe(df_b[["Supplier_Name", "Material_Name", "Qty", "Unit_Cost", "Payment_Type", "Total"]], use_container_width=True, hide_index=True)
-                            _ = st.text_input("Approver notes (optional):", key=f"notes_sofa_{batch_id}")
+                            _ = st.text_input("Approver notes (optional):", key=f"notes_bed_{batch_id}")
                             ac1, ac2 = st.columns(2)
 
-                            if ac1.button("✅ Approve", key=f"ok_sofa_{batch_id}", type="primary", use_container_width=True):
+                            if ac1.button("✅ Approve", key=f"ok_bed_{batch_id}", type="primary", use_container_width=True):
                                 try:
                                     pur_ws = _ensure_sheet("Purchases", ["Date", "Supplier_ID", "Material_ID", "Qty", "Unit_Cost", "Payment_Type"])
                                     pur_rows = []
@@ -2485,7 +2485,7 @@ if authenticate():
                                 except Exception as e:
                                     st.error(f"Failed: {e}")
 
-                            if ac2.button("❌ Reject", key=f"no_sofa_{batch_id}", use_container_width=True):
+                            if ac2.button("❌ Reject", key=f"no_bed_{batch_id}", use_container_width=True):
                                 try:
                                     hdr = [str(h).strip() for h in rep_ws.row_values(1)]
                                     c_status, c_appr = hdr.index("Status") + 1, hdr.index("Approver") + 1
@@ -2515,7 +2515,7 @@ if authenticate():
             ])
 
             with an_tab1:
-                st.markdown("#### 🛋️ Sofa Model Profitability & Unit Economics")
+                st.markdown("#### 🛋️ bed Model Profitability & Unit Economics")
                 if not df_sales_filt.empty and "Model_Name" in df_sales_filt.columns:
                     df_econ = df_sales_filt.copy()
                     model_econ = (
@@ -2534,7 +2534,7 @@ if authenticate():
 
                     k1, k2, k3 = st.columns(3)
                     k1.metric("Top Profit Driver", str(best_model["Model_Name"]), f"ETB {best_model['Gross_Profit']:,.0f}")
-                    k2.metric("Highest Unit Profit", f"ETB {model_econ['Profit_Per_Unit'].max():,.2f}", "Per sofa")
+                    k2.metric("Highest Unit Profit", f"ETB {model_econ['Profit_Per_Unit'].max():,.2f}", "Per bed")
                     k3.metric("Tightest Margin Model", str(worst_margin_row["Model_Name"]), f"{worst_margin_row['Margin_%']:.1f}% margin")
 
                     fig_econ = go.Figure()
