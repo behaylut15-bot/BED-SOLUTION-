@@ -1391,10 +1391,11 @@ if authenticate():
     # ROLE-BASED TAB VISIBILITY
     # =====================================================================
     ALL_TABS = [
-        ("exec", "📊 Exec Summary"),
+         ("exec", "📊 Exec Summary"),
         ("prod", "🏭 Production"),
         ("sales", "🛒 Sales & Income Statement"),
         ("inv", "📦 Inventory"),
+        ("assets", "🛠️ Assets & Machinery"),
         ("sup", "🧾 Suppliers"),
         ("stock_audit", "📈 Stock Audit"),
         ("sup_audit", "💳 Supplier Audit"),
@@ -1402,7 +1403,6 @@ if authenticate():
         ("purch", "🛒 Purchaser & Approver"),
         ("analytics", "📈 Advanced Analytics")
     ]
-
     if role == "manager":
         allowed_keys = [k for k, _ in ALL_TABS]
     elif role == "maker":
