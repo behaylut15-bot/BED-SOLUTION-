@@ -314,6 +314,25 @@ def normalize_payment_type(val):
     s = str(val or "").strip().title()
     return "Credit" if s == "Credit" else "Cash"
 
+def get_material_category_map(df_mat):
+    """Safely extracts Material_ID -> Category mapping from Materials tab."""
+    if df_mat is None or df_mat.empty or "Material_ID" not in df_mat.columns:
+        return {}
+    cat_col = None
+    for candidate in ["Category", "Material_Category", "Type", "Material_Type", "Group"]:
+        if candidate in df_mat.columns:
+            cat_col = candidate
+            break
+    if not cat_col:
+        return {}
+    cat_map = {}
+    for _, row in df_mat.iterrows():
+        m_id = str(row.get("Material_ID", "")).strip()
+        c_val = str(row.get(cat_col, "")).strip()
+        if m_id:
+            cat_map[m_id] = c_val if (c_val and c_val.lower() not in ("nan", "none", "<na>")) else "Uncategorized"
+    return cat_map
+
 def style_plotly_chart(fig, height=360):
     fig.update_layout(
         template="plotly_dark",
@@ -686,18 +705,109 @@ def generate_batch_pdf(batch_id, model_name, qty, total_cost, direct_cost, overh
     pdf.cell(0, 4, f"Direct Cost: ETB {direct_cost:,.2f}     |     Allocated Overhead: ETB {overhead:,.2f}", ln=True, align="C")
     pdf.ln(6)
 
+    # --- CATEGORIZED MATERIAL USAGE SUMMARY IN BATCH PDF ---
+    pdf.set_font(f_name, "B", 11); pdf.set_text_color(*NAVY)
+    pdf.cell(0, 8, f"Material Usage by Category (Batch {batch_id})", ln=True)
+
+    cat_headers = ["Category", "Items Issued", "Total Qty", "Total Cost (ETB)", "Share %"]
+    cat_rows = []
+    if not mat_df.empty:
+        df_cat_tmp = mat_df.copy()
+        if "Category" not in df_cat_tmp.columns:
+            df_cat_tmp["Category"] = "Uncategorized"
+        df_cat_tmp["Category"] = df_cat_tmp["Category"].fillna("Uncategorized").replace("", "Uncategorized")
+        cat_grp = (
+            df_cat_tmp.groupby("Category", as_index=False)
+            .agg(Items=("Material_ID", "count"), Total_Qty=("Qty", "sum"), Total_Cost=("Cost", "sum"))
+            .sort_values(by="Total_Cost", ascending=False)
+        )
+        tot_cat_cost = float(cat_grp["Total_Cost"].sum())
+        for _, cr in cat_grp.iterrows():
+            share_pct = safe_div(float(cr["Total_Cost"]) * 100.0, tot_cat_cost, 0.0)
+            cat_rows.append([
+                str(cr["Category"]),
+                f"{int(cr['Items']):,}",
+                f"{float(cr['Total_Qty']):,.0f}",
+                f"{float(cr['Total_Cost']):,.2f}",
+                f"{share_pct:.1f}%"
+            ])
+    _draw_table(pdf, f_name, cat_headers, cat_rows, font_size=8)
+    pdf.ln(6)
+
     pdf.set_font(f_name, "B", 11); pdf.set_text_color(*NAVY)
     pdf.cell(0, 8, "Detailed Material List", ln=True)
 
-    mat_headers = ["Date (EC)", "Material", "Qty", "Cost (ETB)"]
+    mat_headers = ["Date (EC)", "Category", "Material", "Qty", "Cost (ETB)"]
     mat_rows = []
     if not mat_df.empty:
         for _, r in mat_df.iterrows():
+            cat_label = str(r.get("Category", "Uncategorized")).strip() or "Uncategorized"
             mat_rows.append([
-                str(to_ethiopian(r["Date"])), str(r.get("Material_Name", r["Material_ID"])),
-                str(r["Qty"]), f"{r['Cost']:,.2f}"
+                str(to_ethiopian(r["Date"])),
+                cat_label,
+                str(r.get("Material_Name", r["Material_ID"])),
+                f"{float(r['Qty']):,.0f}",
+                f"{float(r['Cost']):,.2f}"
             ])
-    _draw_table(pdf, f_name, mat_headers, mat_rows, font_size=8)
+    _draw_table(pdf, f_name, mat_headers, mat_rows, font_size=7.5)
+
+    return bytes(pdf.output())
+
+def generate_workshop_overhead_pdf(month_label, total_consumable, total_produced, oh_per_bed, cat_df, detail_df):
+    pdf = _init_pdf(font_ready); f_name = pdf.font_name; pdf.add_page()
+    _draw_report_header(pdf, f_name, "Workshop Overhead Cost Report", f"Period: {month_label} EC")
+
+    NAVY, GOLD = (31, 56, 100), (212, 175, 55)
+    LIGHT_GRAY, DARK = (245, 247, 250), (50, 50, 50)
+
+    info_y = pdf.get_y()
+    pdf.set_fill_color(*LIGHT_GRAY); pdf.set_draw_color(*GOLD); pdf.set_line_width(0.4)
+    pdf.rect(10, info_y, pdf.w - 20, 24, "DF")
+    pdf.set_fill_color(*GOLD); pdf.rect(10, info_y, 3, 24, "F")
+
+    pdf.set_xy(18, info_y + 3); pdf.set_font(f_name, "B", 9); pdf.set_text_color(*NAVY)
+    pdf.cell(0, 6, "WORKSHOP OVERHEAD ABSORPTION SUMMARY", align="L")
+    pdf.set_draw_color(*GOLD); pdf.line(18, info_y + 10, pdf.w - 14, info_y + 10)
+
+    pdf.set_font(f_name, "", 8.5); pdf.set_text_color(*DARK)
+    pdf.set_xy(20, info_y + 13)
+    pdf.cell(0, 5, f"Total Workshop Consumables: ETB {total_consumable:,.2f}   |   Units Produced: {total_produced:,.0f} beds   |   Overhead / Bed: ETB {oh_per_bed:,.2f}")
+
+    pdf.set_y(info_y + 27); _draw_total_box(pdf, f_name, "Total Workshop Overhead", total_consumable); pdf.ln(6)
+
+    pdf.set_font(f_name, "B", 11); pdf.set_text_color(*NAVY)
+    pdf.cell(0, 8, "Categorized Workshop Overhead Breakdown", ln=True)
+
+    cat_headers = ["Category", "Issues Count", "Total Qty", "Total Cost (ETB)", "Share %"]
+    cat_rows = []
+    if not cat_df.empty:
+        for _, r in cat_df.iterrows():
+            cat_rows.append([
+                str(r["Category"]),
+                f"{int(r['Issues_Count']):,}",
+                f"{float(r['Total_Qty']):,.0f}",
+                f"{float(r['Total_Cost']):,.2f}",
+                f"{float(r['Share_%']):.1f}%"
+            ])
+    _draw_table(pdf, f_name, cat_headers, cat_rows, font_size=8)
+    pdf.ln(6)
+
+    pdf.set_font(f_name, "B", 11); pdf.set_text_color(*NAVY)
+    pdf.cell(0, 8, "Detailed Workshop Consumable Issues", ln=True)
+
+    det_headers = ["Date (EC)", "Category", "Material ID", "Material Name", "Qty", "Cost (ETB)"]
+    det_rows = []
+    if not detail_df.empty:
+        for _, r in detail_df.iterrows():
+            det_rows.append([
+                str(to_ethiopian(r["Date"])),
+                str(r.get("Category", "Uncategorized")),
+                str(r.get("Material_ID", "")),
+                str(r.get("Material_Name", r.get("Material_ID", ""))),
+                f"{float(r['Qty']):,.0f}",
+                f"{float(r['Cost']):,.2f}"
+            ])
+    _draw_table(pdf, f_name, det_headers, det_rows, font_size=7)
 
     return bytes(pdf.output())
 
@@ -1168,6 +1278,8 @@ if authenticate():
     if not df_mat.empty and "Reorder_Level" in df_mat.columns:
         df_mat["Reorder_Level"] = clean_numeric_col(df_mat.get("Reorder_Level"), 0.0)
 
+    mat_cat_map = get_material_category_map(df_mat)
+
     # --- FIXED FIFO ENGINE ---
     layers = []
     if not df_op_stock.empty:
@@ -1218,17 +1330,20 @@ if authenticate():
             if qty_needed > 0.0:
                 current_stock[m_id] -= qty_needed
 
+            m_cat = mat_cat_map.get(m_id, "Uncategorized")
             if pd.notna(batch_id) and str(batch_id).strip() != "" and str(batch_id).strip().lower() != "workshop":
                 b_key = str(batch_id).strip().upper()
                 batch_costs[b_key] = batch_costs.get(b_key, 0.0) + cost
                 batch_issue_details.append({
                     "Date": issue["Date"], "Batch_ID": b_key,
-                    "Material_ID": m_id, "Qty": float(issue["Qty"]), "Cost": cost
+                    "Material_ID": m_id, "Category": m_cat,
+                    "Qty": float(issue["Qty"]), "Cost": cost
                 })
             else:
                 workshop_issues.append({
                     "Date": issue["Date"], "Cost": cost,
-                    "Qty": float(issue["Qty"]), "Material_ID": m_id
+                    "Qty": float(issue["Qty"]), "Material_ID": m_id,
+                    "Category": m_cat
                 })
 
     # --- CALCULATE PRODUCTION ---
@@ -1251,7 +1366,7 @@ if authenticate():
             df_prod["Status"] = "In Progress"
 
     # --- MONTHLY OVERHEAD ABSORPTION ---
-    df_workshop = pd.DataFrame(workshop_issues) if workshop_issues else pd.DataFrame(columns=["Date", "Cost", "Qty", "Material_ID"])
+    df_workshop = pd.DataFrame(workshop_issues) if workshop_issues else pd.DataFrame(columns=["Date", "Cost", "Qty", "Material_ID", "Category"])
     if not df_workshop.empty:
         df_workshop["Eth_Year"] = df_workshop["Date"].apply(lambda x: Kenat(x).get_ethiopian()["year"] if pd.notna(x) else 0)
         df_workshop["Eth_Month"] = df_workshop["Date"].apply(lambda x: Kenat(x).get_ethiopian()["month"] if pd.notna(x) else 0)
@@ -1363,7 +1478,7 @@ if authenticate():
         df_issues_all["Eth_Year"] = df_issues_all["Date"].apply(lambda x: Kenat(x).get_ethiopian()["year"] if pd.notna(x) else 0)
         df_issues_all["Eth_Month"] = df_issues_all["Date"].apply(lambda x: Kenat(x).get_ethiopian()["month"] if pd.notna(x) else 0)
     else:
-        df_issues_all = pd.DataFrame(columns=["Date", "Batch_ID", "Material_ID", "Qty", "Cost", "Eth_Year", "Eth_Month"])
+        df_issues_all = pd.DataFrame(columns=["Date", "Batch_ID", "Material_ID", "Category", "Qty", "Cost", "Eth_Year", "Eth_Month"])
 
     months_list = []
     if not df_pur.empty:
@@ -1526,6 +1641,9 @@ if authenticate():
                             how="left"
                         )
                         df_batch_details["Material_Name"] = df_batch_details["Material_Name"].fillna(df_batch_details["Material_ID"])
+                    if "Category" not in df_batch_details.columns:
+                        df_batch_details["Category"] = df_batch_details["Material_ID"].map(lambda x: mat_cat_map.get(x, "Uncategorized"))
+                    df_batch_details["Category"] = df_batch_details["Category"].fillna("Uncategorized")
 
                     batch_options = df_prod_filt["Batch_ID"].unique().tolist()
                     selected_batch = st.selectbox("Inspect Batch Material Breakdown:", batch_options)
@@ -1534,8 +1652,32 @@ if authenticate():
                         df_selected = df_batch_details[df_batch_details["Batch_ID"] == selected_batch].copy()
                         if not df_selected.empty:
                             df_selected["Date (EC)"] = df_selected["Date"].apply(to_ethiopian)
+
+                            # Categorized Material Usage Summary for Batch
+                            st.markdown(f"**📊 Material Usage by Category — Batch {selected_batch}**")
+                            df_batch_cat = (
+                                df_selected.groupby("Category", as_index=False)
+                                .agg(Items_Issued=("Material_ID", "count"), Total_Qty=("Qty", "sum"), Total_Cost=("Cost", "sum"))
+                                .sort_values(by="Total_Cost", ascending=False)
+                            )
+                            tot_b_mat_cost = float(df_batch_cat["Total_Cost"].sum())
+                            df_batch_cat["Share_%"] = df_batch_cat["Total_Cost"].apply(
+                                lambda c: safe_div(float(c) * 100.0, tot_b_mat_cost, 0.0)
+                            )
                             st.dataframe(
-                                df_selected[["Date (EC)", "Material_Name", "Qty", "Cost"]].style.format({
+                                df_batch_cat.style.format({
+                                    "Items_Issued": "{:,.0f}",
+                                    "Total_Qty": "{:,.0f}",
+                                    "Total_Cost": "ETB {:,.2f}",
+                                    "Share_%": "{:.1f}%"
+                                }),
+                                use_container_width=True,
+                                hide_index=True
+                            )
+
+                            st.markdown(f"**📋 Detailed Material Issues — Batch {selected_batch}**")
+                            st.dataframe(
+                                df_selected[["Date (EC)", "Category", "Material_Name", "Qty", "Cost"]].style.format({
                                     "Qty": "{:,.0f}", "Cost": "ETB {:,.2f}"
                                 }),
                                 use_container_width=True,
@@ -1557,7 +1699,7 @@ if authenticate():
 
                             batch_pdf_bytes = generate_batch_pdf(selected_batch, model_n, qty_p, total_b_cost, direct_cost, batch_overhead, df_selected)
                             st.download_button(
-                                f"📥 Download PDF for Batch {selected_batch}",
+                                f"📥 Download Categorized PDF for Batch {selected_batch}",
                                 data=batch_pdf_bytes,
                                 file_name=f"bed_solution_Batch_{selected_batch}.pdf",
                                 mime="application/pdf",
@@ -1622,7 +1764,7 @@ if authenticate():
                         </div>
                         """, unsafe_allow_html=True)
 
-                        with st.expander("🔍 View Breakdown of Workshop Consumables"):
+                        with st.expander("🔍 View Categorized Workshop Consumables & Overhead"):
                             if not df_workshop.empty:
                                 df_ws_month = df_workshop[
                                     (df_workshop["Eth_Year"] == row["Eth_Year"]) & (df_workshop["Eth_Month"] == row["Eth_Month"])
@@ -1634,14 +1776,60 @@ if authenticate():
                                             on="Material_ID",
                                             how="left"
                                         )
+                                        df_ws_month["Material_Name"] = df_ws_month["Material_Name"].fillna(df_ws_month["Material_ID"])
                                     else:
                                         df_ws_month["Material_Name"] = df_ws_month["Material_ID"]
+
+                                    if "Category" not in df_ws_month.columns:
+                                        df_ws_month["Category"] = df_ws_month["Material_ID"].map(lambda x: mat_cat_map.get(x, "Uncategorized"))
+                                    df_ws_month["Category"] = df_ws_month["Category"].fillna("Uncategorized")
+
+                                    df_ws_cat = (
+                                        df_ws_month.groupby("Category", as_index=False)
+                                        .agg(Issues_Count=("Material_ID", "count"), Total_Qty=("Qty", "sum"), Total_Cost=("Cost", "sum"))
+                                        .sort_values(by="Total_Cost", ascending=False)
+                                    )
+                                    tot_ws_cost = float(df_ws_cat["Total_Cost"].sum())
+                                    df_ws_cat["Share_%"] = df_ws_cat["Total_Cost"].apply(
+                                        lambda c: safe_div(float(c) * 100.0, tot_ws_cost, 0.0)
+                                    )
+
+                                    st.markdown("**📊 Categorized Workshop Overhead Summary**")
                                     st.dataframe(
-                                        df_ws_month[["Material_ID", "Material_Name", "Qty", "Cost"]].style.format({
+                                        df_ws_cat.style.format({
+                                            "Issues_Count": "{:,.0f}",
+                                            "Total_Qty": "{:,.0f}",
+                                            "Total_Cost": "ETB {:,.2f}",
+                                            "Share_%": "{:.1f}%"
+                                        }),
+                                        use_container_width=True,
+                                        hide_index=True
+                                    )
+
+                                    st.markdown("**📋 Detailed Workshop Consumable Items**")
+                                    st.dataframe(
+                                        df_ws_month[["Category", "Material_ID", "Material_Name", "Qty", "Cost"]].style.format({
                                             "Qty": "{:,.0f}", "Cost": "ETB {:,.2f}"
                                         }),
                                         use_container_width=True,
                                         hide_index=True
+                                    )
+
+                                    ws_oh_pdf_bytes = generate_workshop_overhead_pdf(
+                                        month_label=m_name,
+                                        total_consumable=month_consumable,
+                                        total_produced=month_produced,
+                                        oh_per_bed=month_oh_per_bed,
+                                        cat_df=df_ws_cat,
+                                        detail_df=df_ws_month
+                                    )
+                                    st.download_button(
+                                        "📥 Download Categorized Workshop Overhead (PDF)",
+                                        data=ws_oh_pdf_bytes,
+                                        file_name=f"Workshop_Overhead_{m_name.replace(' ', '_')}.pdf",
+                                        mime="application/pdf",
+                                        type="primary",
+                                        key=f"dl_ws_oh_{m_name}_{int(row['Eth_Year'])}"
                                     )
                                 else:
                                     st.write("No workshop consumables for this month.")
